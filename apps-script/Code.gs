@@ -5,6 +5,7 @@
  * Script Properties (Project Settings → Script Properties):
  *   TEAM_PASSWORD   the password workers type in the app (change it any time, no redeploy needed)
  *   ROOT_FOLDER_ID  ID of the Drive folder whose sub-folders appear in the app
+ *   LOG_SHEET_ID    (set automatically) the "Durimage 照片记录" Sheet for photos with notes
  *
  * Deploy → New deployment → Web app → Execute as: Me, Who has access: Anyone.
  */
@@ -69,18 +70,40 @@ function doPost(e) {
       return json({ ok: true, uploadUrl: uploadUrl });
     }
 
-    // Note for a photo, saved as a .txt file with the same name next to it.
-    if (req.action === 'note') {
+    // Photo with a note → one row in the "Durimage 照片记录" Google Sheet (newest on top).
+    if (req.action === 'log') {
       const allowed = listFolders(root).some(function (f) { return f.id === req.folderId; });
       if (!allowed) return json({ ok: false, error: 'bad_folder' });
-      const name = String(req.name || '').slice(0, 200);
-      if (!/\.txt$/i.test(name)) return json({ ok: false, error: 'bad_name' });
-      const folder = DriveApp.getFolderById(req.folderId);
-      const existing = folder.getFilesByName(name);
-      if (existing.hasNext()) return json({ ok: true, id: existing.next().getId(), duplicate: true });
-      // BOM so older Windows Notepad also shows Chinese correctly.
-      const file = folder.createFile(name, '\uFEFF' + String(req.text || '').slice(0, 20000), MimeType.PLAIN_TEXT);
-      return json({ ok: true, id: file.getId() });
+      const lock = LockService.getScriptLock();
+      lock.waitLock(20000);
+      try {
+        const sheet = getLogSheet_(root, req.tz);
+        const name = String(req.name || '').slice(0, 200);
+        // Already logged (retry after a dropped connection) → don't add it twice.
+        const last = sheet.getLastRow();
+        if (last > 1 && sheet.getRange(2, COL_FILE, last - 1, 1).createTextFinder(name).matchEntireCell(true).findNext()) {
+          return json({ ok: true, duplicate: true });
+        }
+        const lat = Number(req.lat), lng = Number(req.lng);
+        const hasGps = req.lat != null && isFinite(lat) && isFinite(lng);
+        const row = [
+          new Date(req.capturedAt || Date.now()),
+          safe_(req.folderName),
+          safe_(req.photographer),
+          safe_(req.note).slice(0, 5000),
+          req.fileId ? '=HYPERLINK("https://drive.google.com/file/d/' + String(req.fileId).replace(/[^\w-]/g, '') + '/view","打开照片")' : '',
+          safe_(name),
+          hasGps ? lat.toFixed(6) + ', ' + lng.toFixed(6) + (req.acc ? ' (±' + Math.round(req.acc) + ' m)' : '') : '',
+          hasGps ? '=HYPERLINK("https://maps.google.com/?q=' + lat.toFixed(6) + ',' + lng.toFixed(6) + '","地图")' : '',
+          req.quality === 'compressed' ? '压缩' : '原图',
+          '', '',
+        ];
+        sheet.insertRowBefore(2);
+        sheet.getRange(2, 1, 1, row.length).setValues([row]).setFontWeight('normal').setBackground(null).setFontColor('#000000');
+        return json({ ok: true });
+      } finally {
+        lock.releaseLock();
+      }
     }
 
     // Fallback: compressed photo sent as base64 through this script.
@@ -122,6 +145,39 @@ function listFolders(root) {
   }
   out.sort(function (a, b) { return a.name.localeCompare(b.name); });
   return out;
+}
+
+const LOG_HEADERS = ['拍摄时间', '文件夹', '拍摄者', '注解', '照片', '文件名', 'GPS', '地图', '原图/压缩', '核实结果', '管理员备注'];
+const COL_FILE = 6;
+
+// Finds the log Sheet (ID kept in Script Property LOG_SHEET_ID) or creates it inside the root folder.
+function getLogSheet_(root, tz) {
+  const props = PropertiesService.getScriptProperties();
+  const id = props.getProperty('LOG_SHEET_ID');
+  if (id) {
+    try { return SpreadsheetApp.openById(id).getSheets()[0]; } catch (e) { /* deleted → create a new one */ }
+  }
+  const ss = SpreadsheetApp.create('Durimage 照片记录');
+  if (tz) { try { ss.setSpreadsheetTimeZone(tz); } catch (e) {} }
+  DriveApp.getFileById(ss.getId()).moveTo(root);
+  const sh = ss.getSheets()[0];
+  sh.setName('注解');
+  sh.getRange(1, 1, 1, LOG_HEADERS.length).setValues([LOG_HEADERS])
+    .setFontWeight('bold').setBackground('#2e1a63').setFontColor('#ffffff');
+  sh.getRange(1, 10, 1, 2).setBackground('#f2b52c').setFontColor('#2b1a00'); // columns the admin fills in
+  sh.setFrozenRows(1);
+  sh.getRange('A:A').setNumberFormat('yyyy-mm-dd hh:mm');
+  sh.getRange('D:D').setWrap(true);
+  [140, 120, 90, 320, 90, 260, 190, 60, 80, 160, 200].forEach(function (w, i) { sh.setColumnWidth(i + 1, w); });
+  sh.getRange(1, 1, sh.getMaxRows(), LOG_HEADERS.length).createFilter();
+  props.setProperty('LOG_SHEET_ID', ss.getId());
+  return sh;
+}
+
+// Text typed by workers must never be treated as a formula.
+function safe_(v) {
+  const s = String(v == null ? '' : v);
+  return /^[=+\-@]/.test(s) ? "'" + s : s;
 }
 
 function json(obj) {

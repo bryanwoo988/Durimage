@@ -381,6 +381,7 @@
         folderId: folder.id, folderName: folder.name,
         name: fileName(new Date(now.getTime() + i * 1000), folder.name, ext, id),
         mime: f.type || 'image/jpeg', size: f.size, description, note, thumb: await makeThumb(f),
+        capturedAt: now.toISOString(), pos: pos || null,
       };
       await putBlob(id, f); // the untouched original
       await putItem(item);
@@ -426,25 +427,28 @@
       if (store.get('directOk', false) || !navigator.onLine) throw e;
       console.warn('direct upload not possible here, sending compressed copy', e);
       const small = await compress(blob);
-      return api({
+      const name = item.name.replace(/\.[^.]+$/, '.jpg');
+      const r = await api({
         action: 'upload', key: state.password,
-        folderId: item.folderId, name: item.name.replace(/\.[^.]+$/, '.jpg'), mimeType: 'image/jpeg',
+        folderId: item.folderId, name, mimeType: 'image/jpeg',
         description: item.description + '\n(Compressed copy: original upload not supported on this device)',
         data: await toBase64(small),
       });
+      return { ...r, compressed: true, name };
     }
   }
 
-  // "durian_X_..._ab12cd.jpg" → "durian_X_..._ab12cd.txt", so the note sorts right next to its photo.
-  const noteName = (item) => item.name.replace(/\.[^.]+$/, '') + '.txt';
-  const noteText = (item) => [
-    item.note,
-    '',
-    '----',
-    `Photo: ${item.name}`,
-    `Folder: ${item.folderName}`,
-    ...item.description.split('\n').filter((l) => l !== item.note && l !== 'Source: Durimage'),
-  ].join('\n');
+  // Only photos with a note get a row in the Google Sheet (newest row on top).
+  const logRow = (item) => ({
+    action: 'log', key: state.password,
+    folderId: item.folderId, folderName: item.folderName,
+    fileId: item.driveId, name: item.uploadedName || item.name,
+    note: item.note, photographer: state.name,
+    capturedAt: item.capturedAt || new Date(item.createdAt).toISOString(),
+    lat: item.pos ? item.pos.lat : null, lng: item.pos ? item.pos.lng : null, acc: item.pos ? item.pos.acc : null,
+    quality: item.compressed ? 'compressed' : 'original',
+    tz: Intl.DateTimeFormat().resolvedOptions().timeZone,
+  });
 
   async function processQueue() {
     if (state.uploading || !navigator.onLine || !state.password) return;
@@ -457,15 +461,18 @@
         if (!navigator.onLine) break;
         item.status = 'uploading'; render();
         try {
-          // Photo first (skipped if an earlier attempt already got it into Drive), then the .txt note.
+          // Photo first (skipped if an earlier attempt already got it into Drive), then the Sheet row.
           let res = { ok: true, id: item.driveId };
           if (!item.driveId) {
             res = await uploadOne(item);
-            if (res.ok) { item.driveId = res.id; await putItem(item); await delBlob(item.id); }
+            if (res.ok) {
+              item.driveId = res.id; item.compressed = !!res.compressed; if (res.name) item.uploadedName = res.name;
+              await putItem(item); await delBlob(item.id);
+            }
           }
-          if (res.ok && item.note && !item.noteSaved) {
-            res = await api({ action: 'note', key: state.password, folderId: item.folderId, name: noteName(item), text: noteText(item) });
-            if (res.ok) item.noteSaved = true;
+          if (res.ok && item.note && !item.logged) {
+            res = await api(logRow(item));
+            if (res.ok) item.logged = true;
           }
           if (res.ok) {
             item.status = 'done'; item.error = null;

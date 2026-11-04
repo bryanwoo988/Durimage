@@ -22,14 +22,15 @@
 2. 按中间快门拍照（或从相册选）→ 选文件夹 → 可写备注 → 保存。
 3. 照片先存在手机里，有网络就自动上传；果园没信号会排队，有网络再打开 App 会继续传。
 
-**注解（.txt）**：保存照片时可以写注解。有写的话，同一个文件夹里会多一个**同名的 `.txt`**，例如：
+**注解 → Google Sheet**：保存照片时写了注解，就会在 Google Sheet `Durimage 照片记录` 加一行；没写注解的照片不会进 Sheet（全部照片在 Drive 文件夹里都有）。
 
-```
-durian_果腐病_20261104_124426_阿明_e233e4.jpg
-durian_果腐病_20261104_124426_阿明_e233e4.txt   ← 注解、拍摄者、时间、GPS
-```
-
-没写注解就不会产生 .txt。注解也同时写在照片的 Drive「描述」里，但从 Drive 下载照片时描述不会跟着下载，所以 .txt 才是整理资料时可靠的那份。`.txt` 用 UTF-8 编码，Windows 记事本可以正常显示中文。
+- 只有一个 Sheet、一个分页，**最新的注解在最上面**。
+- Sheet 第一次有注解时由 Apps Script 自动建立，放在 `Durimage` 总文件夹里，你不用自己建。
+- 栏位：拍摄时间 · 文件夹 · 拍摄者 · 注解 · 照片（链接）· 文件名 · GPS · 地图（链接）· 原图/压缩 · **核实结果** · **管理员备注**
+- 最后两栏（金色标题）留给你自己填，例如专家确认后的正确病名。
+- 标题行已冻结、已开筛选，可以按文件夹、拍摄者、日期筛选。
+- Sheet 里不显示缩图（私人照片无法用 `IMAGE()` 显示），点「打开照片」看原图。
+- 如果你把 Sheet 删掉，下一条注解会自动建一个新的。
 
 上传到 Drive 的照片：
 - 文件名：`durian_<文件夹>_<日期_时间>_<名字>_<编号>.jpg`
@@ -58,10 +59,12 @@ App 会自动列出总文件夹下的**子文件夹**。以后新增子文件夹
    | `TEAM_PASSWORD` | 你要的团队密码 |
    | `ROOT_FOLDER_ID` | 第 1 步复制的文件夹 ID |
 
+   （之后会自动多出一个 `LOG_SHEET_ID`，是注解 Sheet 的 ID，不用理它。）
+
 4. 右上 **部署（Deploy）→ 新部署（New deployment）** → 类型选 **网页应用（Web app）**：
    - 执行身份（Execute as）：**我（Me）**
    - 谁可以访问（Who has access）：**任何人（Anyone）**
-5. 按部署，第一次会要求授权你的 Google 账号（会要求 Drive 和"连接外部服务"两项权限，后者用来开上传通道）（会出现"Google 尚未验证此应用"，按 *Advanced → Go to Durimage* 继续，因为这是你自己的脚本）。
+5. 按部署，第一次会要求授权你的 Google 账号（会要求 Drive、Google Sheets 和"连接外部服务"三项权限：Sheets 用来写注解，外部服务用来开上传通道）（会出现"Google 尚未验证此应用"，按 *Advanced → Go to Durimage* 继续，因为这是你自己的脚本）。
 6. 复制 **网页应用网址**（结尾是 `/exec`）。
 
 ### 3. 把网址填进 App
@@ -108,7 +111,7 @@ python3 -m http.server 8765
 | `app.js` | 首次设置、拍照、压缩、上传队列（IndexedDB） |
 | `i18n.js` | 三语文字 |
 | `config.js` | Apps Script 网址 |
-| `apps-script/Code.gs` | 后端：验证密码、列文件夹、开上传通道（原图）、备用压缩上传 |
+| `apps-script/Code.gs` | 后端：验证密码、列文件夹、开上传通道（原图）、备用压缩上传、写注解到 Sheet |
 | `icons/` | App icon（榴莲法师）与 header 用的 `mark.svg` |
 | `vendor/qrcode.js` | QR code 产生器（MIT，Kazuhiko Arase） |
 | `sw.js` / `manifest.webmanifest` | PWA 离线缓存与安装 |
