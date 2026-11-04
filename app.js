@@ -131,7 +131,7 @@
     bd.addEventListener('click', (e) => {
       if (e.target === bd || e.target.closest('[data-close]')) {
         bd.hidden = true;
-        if (bd.id === 'reviewSheet') resetReview();
+        if (bd.id === 'reviewSheet') { resetReview(); maybeReload(); }
       }
     });
   });
@@ -141,6 +141,8 @@
   // Step 1 (password) must succeed before step 2 (name); both before the camera.
   function showOnboard(mode) {
     state.onboardMode = mode;
+    document.body.classList.add('ob-mode'); window.scrollTo(0, 0);
+    setPwVisible(false);
     clearTimeout(toastTimer); $('toast').className = 'toast';
     const pwStep = mode === 'pw' || mode === 'reenter' || mode === 'pwChanged';
     $('onboard').hidden = false;
@@ -156,7 +158,14 @@
     // No auto-focus on first launch: the keyboard would cover the intro. Focus only when re-entering.
     if (mode !== 'pw') setTimeout(() => (pwStep ? $('pwInput') : $('nameInput')).focus(), 50);
   }
-  function hideOnboard() { $('onboard').hidden = true; state.onboardMode = null; }
+  function hideOnboard() { $('onboard').hidden = true; state.onboardMode = null; document.body.classList.remove('ob-mode'); maybeShowWhatsNew(); }
+  function setPwVisible(on) {
+    $('pwInput').type = on ? 'text' : 'password';
+    $('pwEye').querySelector('use').setAttribute('href', on ? '#i-eye-off' : '#i-eye');
+    $('pwEye').setAttribute('aria-label', t(on ? 'hidePw' : 'showPw'));
+    $('pwEye').setAttribute('aria-pressed', on ? 'true' : 'false');
+  }
+  $('pwEye').onclick = () => { setPwVisible($('pwInput').type === 'password'); $('pwInput').focus(); };
   function needsOnboard() {
     if (!state.password) { showOnboard('pw'); return true; }
     if (!state.name) { showOnboard('name'); return true; }
@@ -262,6 +271,7 @@
     $('nameValue').textContent = state.name || '—';
     renderAppearance();
     renderFolderList();
+    renderHistory();
   }
 
   const folderChip = (f, on) => `<svg><use href="#i-folder-fill"/></svg><span class="name">${esc(f.name)}</span>
@@ -564,6 +574,7 @@
     else if (state.items.some((i) => i.status === 'error')) toast(t('uploadFail'), true);
     await trimHistory();
     render();
+    maybeReload();
     if (run.rejected) { passwordRejected(); return; }
     // Photos saved while this run was going → start another run.
     if (!run.stop && navigator.onLine && state.items.some((i) => i.status === 'queued')) processQueue();
@@ -687,6 +698,68 @@
     applyTheme(); renderAppearance();
   }));
 
+  // ---------- Versions, update history, automatic updates ----------
+  const VERSION = window.DURIMAGE_VERSION || '0';
+  const LOG = window.DURIMAGE_CHANGELOG || [];
+  const fmtDateTime = (iso) => new Date(iso).toLocaleString(LOCALE(), { dateStyle: 'medium', timeStyle: 'short' });
+  const notesOf = (e) => (e.notes[state.lang] || e.notes.en || []);
+  const notesHtml = (e) => `<ul class="notes">${notesOf(e).map((n) => `<li>${esc(n)}</li>`).join('')}</ul>`;
+
+  function renderHistory() {
+    $('versionValue').textContent = 'v' + VERSION;
+    $('histCurrent').textContent = 'v' + VERSION;
+    $('histList').innerHTML = LOG.map((e, i) => `<li>
+      <div class="hist-top"><b>v${esc(e.version)}</b>${i === 0 ? `<span class="tag">${esc(t('latest'))}</span>` : ''}
+        <time datetime="${esc(e.date)}">${esc(fmtDateTime(e.date))}</time></div>
+      ${notesHtml(e)}</li>`).join('');
+  }
+  $('historyRowBtn').onclick = () => { closeSheet('settingsSheet'); openSheet('historySheet'); };
+
+  // "What's new": once per new version, listing every release since the one this phone last saw.
+  function maybeShowWhatsNew() {
+    if (state.onboardMode || !LOG.length) return;
+    // Phones that used the app before version tracking existed count as having seen 1.1.0.
+    const seen = store.get('seenVersion', state.password ? '1.1.0' : null);
+    store.set('seenVersion', VERSION);
+    if (!seen || seen === VERSION) return;
+    const idx = LOG.findIndex((e) => e.version === seen);
+    const fresh = LOG.slice(0, idx === -1 ? 1 : idx);
+    if (!fresh.length) return;
+    $('wnTitle').textContent = t('updatedTo', { v: VERSION });
+    $('wnDate').textContent = fmtDateTime(fresh[0].date);
+    $('wnBody').innerHTML = fresh.map((e) => (fresh.length > 1 ? `<div class="wn-ver">v${esc(e.version)}</div>` : '') + notesHtml(e)).join('');
+    openSheet('whatsNewSheet');
+  }
+
+  // A new service worker takes over → reload into the new version, but never in the middle of
+  // an upload or while the user is saving a photo.
+  let swReg = null, pendingReload = false;
+  function maybeReload() {
+    if (pendingReload && !state.uploading && $('reviewSheet').hidden) location.reload();
+  }
+  async function checkForUpdate(manual) {
+    if (!swReg) { if (manual) toast(t('checkFailed'), true); return; }
+    try {
+      await swReg.update();
+      if (!manual) return;
+      if (swReg.installing || swReg.waiting) toast(t('updateFound'));
+      else toast(t('upToDate'));
+    } catch { if (manual) toast(t('checkFailed'), true); }
+  }
+  $('checkUpdateBtn').onclick = () => checkForUpdate(true);
+  function setupServiceWorker() {
+    if (!('serviceWorker' in navigator)) return;
+    const hadController = !!navigator.serviceWorker.controller; // false on the very first visit
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (!hadController) return;
+      pendingReload = true; maybeReload();
+    });
+    navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then((reg) => {
+      swReg = reg;
+      setInterval(() => checkForUpdate(false), 30 * 60 * 1000);
+    }).catch(() => {});
+  }
+
   // ---------- Settings ----------
   $('settingsBtn').onclick = () => openSheet('settingsSheet');
   $('onboardLangBtn').onclick = cycleLang;
@@ -725,7 +798,7 @@
 
   window.addEventListener('online', () => { render(); processQueue(); });
   window.addEventListener('offline', render);
-  document.addEventListener('visibilitychange', () => { if (!document.hidden) processQueue(); });
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) { processQueue(); checkForUpdate(false); maybeReload(); } });
 
   // ---------- Boot ----------
   (async () => {
@@ -733,9 +806,12 @@
       state.items = await allItems();
       for (const i of state.items) if (i.status === 'uploading') { i.status = 'queued'; await putItem(i); }
     } catch (e) { console.error(e); }
+    // Brand-new phone (never logged in, never saw a version): nothing to announce later.
+    if (store.get('seenVersion', null) === null && !state.password) store.set('seenVersion', VERSION);
     applyTheme();
     applyI18n();
     if (!needsOnboard()) { refreshFolders(false); processQueue(); }
-    if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+    if (!state.onboardMode) maybeShowWhatsNew();
+    setupServiceWorker();
   })();
 })();

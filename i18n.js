@@ -1,5 +1,9 @@
 window.I18N = {
   zh: {
+    showPw: '显示密码', hidePw: '隐藏密码',
+    updateHistory: '更新记录', currentVersion: '目前版本', checkUpdate: '检查更新', latest: '最新',
+    upToDate: '已经是最新版本', updateFound: '找到新版本，正在更新…', checkFailed: '无法检查更新，请确认有网络',
+    updatedTo: '已更新到 v{v}', gotIt: '知道了',
     uploadingN: '正在上传 {d} / {n}', waitingN: '{n} 张等待上传', uploadAll: '全部上传',
     keepOpen: '上传时请保持 App 开着，切到别的 App 或锁屏会暂停，回来会继续',
     dToday: '今天', dYesterday: '昨天',
@@ -95,6 +99,10 @@ window.I18N = {
     saved: '已保存',
   },
   en: {
+    showPw: 'Show password', hidePw: 'Hide password',
+    updateHistory: 'Update history', currentVersion: 'Current version', checkUpdate: 'Check for updates', latest: 'Latest',
+    upToDate: 'You have the latest version', updateFound: 'New version found, updating…', checkFailed: 'Could not check for updates. Are you online?',
+    updatedTo: 'Updated to v{v}', gotIt: 'Got it',
     uploadingN: 'Uploading {d} / {n}', waitingN: '{n} waiting to upload', uploadAll: 'Upload all',
     keepOpen: 'Keep the app open while uploading. Switching apps or locking the phone pauses it; it resumes when you come back',
     dToday: 'Today', dYesterday: 'Yesterday',
@@ -190,6 +198,10 @@ window.I18N = {
     saved: 'Saved',
   },
   ms: {
+    showPw: 'Tunjuk kata laluan', hidePw: 'Sembunyi kata laluan',
+    updateHistory: 'Sejarah kemas kini', currentVersion: 'Versi semasa', checkUpdate: 'Semak kemas kini', latest: 'Terkini',
+    upToDate: 'Anda sudah ada versi terkini', updateFound: 'Versi baharu dijumpai, sedang dikemas kini…', checkFailed: 'Tidak dapat menyemak kemas kini. Ada internet?',
+    updatedTo: 'Dikemas kini ke v{v}', gotIt: 'Faham',
     uploadingN: 'Memuat naik {d} / {n}', waitingN: '{n} menunggu dimuat naik', uploadAll: 'Muat naik semua',
     keepOpen: 'Biarkan aplikasi terbuka semasa memuat naik. Tukar aplikasi atau kunci telefon akan menjeda; ia sambung semula apabila anda kembali',
     dToday: 'Hari ini', dYesterday: 'Semalam',

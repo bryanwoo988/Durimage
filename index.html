@@ -49,6 +49,10 @@
     <symbol id="i-copy" viewBox="0 0 24 24"><rect x="8.5" y="8.5" width="11" height="11" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M15.5 8.5V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v7.5a2 2 0 0 0 2 2h2.5" fill="none" stroke="currentColor" stroke-width="1.8"/></symbol>
     <symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M3.5 12h17M12 3.5c2.6 2.6 3.8 5.4 3.8 8.5s-1.2 5.9-3.8 8.5c-2.6-2.6-3.8-5.4-3.8-8.5S9.4 6.1 12 3.5z" fill="none" stroke="currentColor" stroke-width="1.6"/></symbol>
     <symbol id="i-note" viewBox="0 0 24 24"><path d="M6.5 3.5h7.6l4.4 4.4v10.6a2 2 0 0 1-2 2h-10a2 2 0 0 1-2-2v-13a2 2 0 0 1 2-2z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M14 3.7V8h4.3M8 12.5h8M8 16h5.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></symbol>
+    <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><circle cx="12" cy="12" r="3.2" fill="none" stroke="currentColor" stroke-width="1.8"/></symbol>
+    <symbol id="i-eye-off" viewBox="0 0 24 24"><path d="M3 3l18 18M10.6 5.6c.5-.1.9-.1 1.4-.1 6 0 9.5 6.5 9.5 6.5a17 17 0 0 1-3 3.8M6.4 6.4C3.9 8.1 2.5 12 2.5 12S6 18.5 12 18.5c1.7 0 3.2-.5 4.5-1.2M9.9 9.9a3.2 3.2 0 0 0 4.2 4.2" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M12 7.5V12l3 2" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-sparkle" viewBox="0 0 24 24"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8zM18.5 15.5l.8 2.2 2.2.8-2.2.8-.8 2.2-.8-2.2-2.2-.8 2.2-.8z" fill="currentColor"/></symbol>
     <symbol id="i-logo" viewBox="0 0 64 64"><g fill="currentColor"><path d="M32 4l4 7 7-4 1 8 8-1-2 8 7 3-5 6 5 6-7 3 2 8-8-1-1 8-7-4-4 7-4-7-7 4-1-8-8 1 2-8-7-3 5-6-5-6 7-3-2-8 8 1 1-8 7 4z"/></g><ellipse cx="32" cy="34" rx="11" ry="12" fill="#fbbf24"/><path d="M32 22c-1-4 1-8 5-10" stroke="#fbbf24" stroke-width="3" fill="none" stroke-linecap="round"/></symbol>
   </svg>
 
@@ -204,7 +208,13 @@
       </div>
       <button class="btn btn-outline btn-block share-row" id="shareRowBtn"><svg><use href="#i-qr"/></svg><span data-i18n="shareApp"></span></button>
       <button class="btn btn-ghost btn-block" id="clearHistoryBtn" data-i18n="clearHistory"></button>
-      <div class="version">Durimage v1.3</div>
+      <button class="set-group set-row set-link" id="historyRowBtn">
+        <div>
+          <div class="set-label" data-i18n="updateHistory"></div>
+          <div class="set-title" id="versionValue"></div>
+        </div>
+        <svg class="chev"><use href="#i-chev"/></svg>
+      </button>
     </div>
   </div>
 
@@ -240,6 +250,36 @@
       <div class="swatches" id="lightSwatches"></div>
       <h3 class="appear-sub" data-i18n="darkTheme"></h3>
       <div class="swatches" id="darkSwatches"></div>
+    </div>
+  </div>
+
+  <!-- Update history -->
+  <div class="sheet-backdrop" id="historySheet" hidden>
+    <div class="sheet sheet-tall" role="dialog" aria-modal="true">
+      <div class="sheet-grip"></div>
+      <div class="sheet-head">
+        <h2 data-i18n="updateHistory"></h2>
+        <button class="icon-btn" data-close aria-label="Close"><svg><use href="#i-x"/></svg></button>
+      </div>
+      <div class="hist-now">
+        <div><div class="set-label" data-i18n="currentVersion"></div><div class="hist-ver" id="histCurrent"></div></div>
+        <button class="btn btn-small btn-outline" id="checkUpdateBtn"><svg><use href="#i-retry"/></svg><span data-i18n="checkUpdate"></span></button>
+      </div>
+      <ol class="hist-list" id="histList"></ol>
+    </div>
+  </div>
+
+  <!-- What's new (shown once after an automatic update) -->
+  <div class="sheet-backdrop" id="whatsNewSheet" hidden>
+    <div class="sheet" role="dialog" aria-modal="true">
+      <div class="sheet-grip"></div>
+      <div class="wn-head">
+        <div class="wn-icon"><svg><use href="#i-sparkle"/></svg></div>
+        <h2 id="wnTitle"></h2>
+        <div class="wn-date" id="wnDate"></div>
+      </div>
+      <div id="wnBody"></div>
+      <button class="btn btn-primary btn-block" data-close data-i18n="gotIt"></button>
     </div>
   </div>
 
@@ -284,7 +324,10 @@
         <form id="pwForm" novalidate>
           <div class="ob-step" id="pwStep"></div>
           <div class="onboard-notice" id="pwNotice" hidden data-i18n="pwChanged"></div>
-          <input class="ob-input" id="pwInput" type="password" autocomplete="current-password" data-i18n-ph="pwPh">
+          <div class="ob-field">
+            <input class="ob-input" id="pwInput" type="password" autocomplete="current-password" autocapitalize="off" autocorrect="off" spellcheck="false" data-i18n-ph="pwPh">
+            <button class="ob-eye" id="pwEye" type="button"><svg><use href="#i-eye"/></svg></button>
+          </div>
           <div class="ob-help" data-i18n="pwDesc"></div>
           <div class="form-err" id="pwErr"></div>
           <button class="ob-btn" id="pwSubmit" type="submit" data-i18n="next"></button>
@@ -307,6 +350,7 @@
 
   <script src="vendor/qrcode.js"></script>
   <script src="config.js"></script>
+  <script src="changelog.js"></script>
   <script src="i18n.js"></script>
   <script src="app.js"></script>
 </body>

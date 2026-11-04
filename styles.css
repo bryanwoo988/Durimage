@@ -299,7 +299,7 @@ html[data-dark="1"] .segmented button.on { color: var(--ink); }
 
 /* Onboarding — hero + feature list on top, dark panel with the form at the bottom (thumb zone) */
 .onboard {
-  position: fixed; inset: 0; z-index: 60; overflow-y: auto;
+  position: relative; z-index: 60; min-height: 100vh; min-height: 100dvh;
   background: var(--stars), radial-gradient(120% 70% at 50% 0%, #4a2f8f, var(--night-2) 45%, #120a2a 100%);
   color: #fff;
 }
@@ -428,3 +428,38 @@ html[data-dark="1"] .segmented button.on { color: var(--ink); }
 .detail-list .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px; }
 .detail-foot { grid-template-columns: 1fr 1fr; }
 .detail-foot:has(#detailRetry[hidden]) { grid-template-columns: 1fr; }
+
+/* While onboarding is shown, it is the whole page (no fixed overlay: on iPhone home-screen apps
+   a fixed overlay could stop short of the bottom edge). */
+body.ob-mode { background: #120a2a; }
+body.ob-mode .app, body.ob-mode .dock { display: none; }
+
+/* Password show/hide */
+.ob-field { position: relative; }
+.ob-field .ob-input { padding-right: 60px; }
+.ob-eye { position: absolute; right: 6px; top: 50%; transform: translateY(-50%); width: 48px; height: 48px; border-radius: 14px; display: grid; place-items: center; color: rgba(255,255,255,.7); }
+.ob-eye:active { background: rgba(255,255,255,.08); }
+.ob-eye svg { width: 24px; height: 24px; }
+
+/* Update history */
+.hist-now { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 6px 2px 14px; border-bottom: 1px solid var(--line); }
+.hist-ver { font-size: 22px; font-weight: 800; }
+.hist-now .btn svg { width: 18px; height: 18px; }
+.hist-list { list-style: none; margin: 0; padding: 0; }
+.hist-list li { padding: 16px 2px; border-bottom: 1px solid var(--line); }
+.hist-list li:last-child { border-bottom: 0; }
+.hist-top { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.hist-top b { font-size: 17px; }
+.hist-top .tag { font-size: 11.5px; font-weight: 800; padding: 2px 8px; border-radius: 99px; background: var(--green-100); color: var(--green-600); }
+.hist-top time { font-size: 13px; color: var(--ink-2); margin-left: auto; }
+.notes { margin: 8px 0 0; padding-left: 20px; font-size: 14.5px; line-height: 1.5; }
+.notes li { padding: 2px 0; border: 0; }
+
+/* What's new */
+.wn-head { text-align: center; padding: 8px 0 6px; }
+.wn-icon { width: 60px; height: 60px; border-radius: 18px; margin: 0 auto 10px; display: grid; place-items: center; color: #ffd35a; background: linear-gradient(160deg, var(--night-1), var(--night-2)); }
+.wn-icon svg { width: 30px; height: 30px; }
+.wn-head h2 { margin: 0; font-size: 21px; }
+.wn-date { font-size: 13px; color: var(--ink-2); margin-top: 4px; }
+#wnBody { margin: 10px 0 18px; }
+#wnBody .wn-ver { font-size: 13px; font-weight: 800; color: var(--ink-2); margin: 12px 0 0; }
