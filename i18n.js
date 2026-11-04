@@ -1,5 +1,6 @@
 window.I18N = {
   zh: {
+    saveFailed: '只保存了 {n} / {total} 张，可能是手机空间不足，请清出空间后再拍', confirmRemoveRecord: '这张照片已经在 Drive 里。只会从这支手机移除这条记录，Drive 的照片不受影响。确定移除？', errMissing: '手机里找不到这张照片的档案，无法上传。可以从手机删除这条记录。',
     showPw: '显示密码', hidePw: '隐藏密码',
     updateHistory: '更新记录', currentVersion: '目前版本', checkUpdate: '检查更新', latest: '最新',
     upToDate: '已经是最新版本', updateFound: '找到新版本，正在更新…', checkFailed: '无法检查更新，请确认有网络',
@@ -99,6 +100,7 @@ window.I18N = {
     saved: '已保存',
   },
   en: {
+    saveFailed: 'Only {n} of {total} saved. The phone may be out of storage; free some space and try again', confirmRemoveRecord: 'This photo is already in Drive. Only this record is removed from the phone; the Drive photo is not affected. Remove it?', errMissing: 'The photo file is no longer on this phone, so it cannot be uploaded. You can delete this record.',
     showPw: 'Show password', hidePw: 'Hide password',
     updateHistory: 'Update history', currentVersion: 'Current version', checkUpdate: 'Check for updates', latest: 'Latest',
     upToDate: 'You have the latest version', updateFound: 'New version found, updating…', checkFailed: 'Could not check for updates. Are you online?',
@@ -198,6 +200,7 @@ window.I18N = {
     saved: 'Saved',
   },
   ms: {
+    saveFailed: 'Hanya {n} daripada {total} disimpan. Storan telefon mungkin penuh; kosongkan ruang dan cuba lagi', confirmRemoveRecord: 'Foto ini sudah ada dalam Drive. Hanya rekod ini dibuang dari telefon; foto dalam Drive tidak terjejas. Buang?', errMissing: 'Fail foto tiada lagi dalam telefon ini, jadi tidak boleh dimuat naik. Anda boleh padam rekod ini.',
     showPw: 'Tunjuk kata laluan', hidePw: 'Sembunyi kata laluan',
     updateHistory: 'Sejarah kemas kini', currentVersion: 'Versi semasa', checkUpdate: 'Semak kemas kini', latest: 'Terkini',
     upToDate: 'Anda sudah ada versi terkini', updateFound: 'Versi baharu dijumpai, sedang dikemas kini…', checkFailed: 'Tidak dapat menyemak kemas kini. Ada internet?',

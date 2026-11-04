@@ -129,7 +129,9 @@
   const closeSheet = (id) => { $(id).hidden = true; };
   document.querySelectorAll('.sheet-backdrop').forEach((bd) => {
     bd.addEventListener('click', (e) => {
-      if (e.target === bd || e.target.closest('[data-close]')) {
+      const outside = e.target === bd;
+      if (outside && bd.id === 'reviewSheet') return; // never discard just-taken photos by a stray tap
+      if (outside || e.target.closest('[data-close]')) {
         bd.hidden = true;
         if (bd.id === 'reviewSheet') { resetReview(); maybeReload(); }
       }
@@ -356,7 +358,10 @@
   $('cameraInput').addEventListener('change', onFiles);
   $('galleryInput').addEventListener('change', onFiles);
 
-  function resetReview() {
+  function resetReview(files) {
+    // files given → only reset if the review still shows that same batch (a new photo may have
+    // been taken while the previous batch was being saved).
+    if (files && state.pending !== files) return;
     $('reviewStrip').querySelectorAll('img').forEach((i) => URL.revokeObjectURL(i.src));
     state.pending = [];
   }
@@ -427,6 +432,8 @@
       'Source: Durimage',
     ].filter(Boolean).join('\n');
 
+    let saved = 0;
+    try {
     for (let i = 0; i < files.length; i++) {
       const id = crypto.randomUUID ? crypto.randomUUID().replace(/-/g, '') : (Date.now().toString(36) + Math.random().toString(36).slice(2));
       const f = files[i];
@@ -443,8 +450,17 @@
       if (preview) await putBlob(id + '_p', preview); // kept after upload so the detail view still has a picture
       await putItem(item);
       state.items.push(item);
+      saved++;
     }
-    resetReview();
+    } catch (e) {
+      // #7 e.g. phone storage full: say so instead of failing silently
+      console.error(e);
+      resetReview(files); render();
+      toast(t('saveFailed', { n: saved, total: files.length }), true);
+      processQueue();
+      return;
+    }
+    resetReview(files);
     render();
     try { navigator.storage && navigator.storage.persist && navigator.storage.persist(); } catch {}
     toast(t(navigator.onLine ? 'savedQueued' : 'savedOffline', { n: files.length }));
@@ -464,7 +480,7 @@
   // If this device cannot do that, fall back to a compressed copy sent through Apps Script.
   async function uploadOne(item) {
     const blob = await getBlob(item.id);
-    if (!blob) throw new Error('missing blob');
+    if (!blob) return { ok: false, error: 'missing' };
     if (DEMO) return api({ action: 'upload' });
 
     const ses = await api({
@@ -482,7 +498,11 @@
       return { ok: true, id: j.id };
     } catch (e) {
       // A device that has sent originals before → this is just a network problem, retry later.
+      // Otherwise give the original a second chance before falling back (a one-off signal drop
+      // must not turn a photo into a compressed copy for good).
       if (store.get('directOk', false) || !navigator.onLine) throw e;
+      item.directFails = (item.directFails || 0) + 1;
+      if (item.directFails < 2) throw e;
       console.warn('direct upload not possible here, sending compressed copy', e);
       const small = await compress(blob);
       const name = item.name.replace(/\.[^.]+$/, '.jpg');
@@ -509,6 +529,9 @@
   });
 
   const CONCURRENCY = 3; // photos sent at the same time
+  // Errors that retrying will not fix. Everything else (Google busy, timeouts) is retried automatically.
+  const PERMANENT_ERRORS = new Set(['bad_folder', 'bad_type', 'too_large', 'missing', 'bad_name']);
+  let retryTimer = null;
 
   async function processOne(item, run) {
     item.status = 'uploading'; render();
@@ -531,13 +554,18 @@
         run.doneByFolder[item.folderName] = (run.doneByFolder[item.folderName] || 0) + 1;
       } else if (res.error === 'bad_key') {
         item.status = 'queued'; run.rejected = true;
-      } else {
+      } else if (PERMANENT_ERRORS.has(res.error) || (item.tries = (item.tries || 0) + 1) >= 5) {
         item.status = 'error'; item.error = res.error || 'unknown'; // e.g. bad_folder: removed by admin
+      } else {
+        item.status = 'queued'; item.error = res.error || 'unknown'; run.retrySoon = true; // e.g. Google busy
       }
     } catch (e) {
       console.error(e);
-      item.status = 'queued'; // network problem: keep it for the next attempt
       item.error = String(e.message || e);
+      // Offline / dropped connection: keep it queued. If it keeps failing while online, it is not
+      // a network problem (e.g. the phone cannot read the file), so stop after a few tries.
+      if (navigator.onLine && (item.tries = (item.tries || 0) + 1) >= 8) item.status = 'error';
+      else item.status = 'queued';
       run.stop = true;
     }
     await putItem(item);
@@ -556,6 +584,7 @@
       while (!run.stop && !run.rejected && navigator.onLine) {
         const item = todo[next++];
         if (!item) return;
+        if (!state.items.includes(item)) { state.batch.done++; continue; } // deleted from the phone meanwhile
         await processOne(item, run);
         state.batch.done++;
         render();
@@ -576,8 +605,12 @@
     render();
     maybeReload();
     if (run.rejected) { passwordRejected(); return; }
+    const waiting = state.items.some((i) => i.status === 'queued');
+    // #3 weak signal / Google busy: try again by itself after a pause, even if the phone still says "online".
+    clearTimeout(retryTimer);
+    if (waiting && (run.stop || run.retrySoon)) retryTimer = setTimeout(processQueue, run.stop ? 30000 : 15000);
     // Photos saved while this run was going → start another run.
-    if (!run.stop && navigator.onLine && state.items.some((i) => i.status === 'queued')) processQueue();
+    else if (waiting && navigator.onLine) processQueue();
   }
 
   async function trimHistory() {
@@ -596,7 +629,7 @@
       const f = state.folders.find((x) => x.id === state.currentFolder);
       if (f) { item.folderId = f.id; item.folderName = f.name; }
     }
-    item.status = 'queued'; item.error = null;
+    item.status = 'queued'; item.error = null; item.tries = 0;
     return putItem(item);
   }
   async function openDetail(id) {
@@ -611,7 +644,7 @@
     badge.className = 'tile-badge b-' + item.status;
     badge.textContent = t(item.status);
     $('detailErr').hidden = item.status !== 'error';
-    $('detailErr').textContent = item.error === 'bad_folder' ? t('errFolder') : t('errGeneric');
+    $('detailErr').textContent = item.error === 'bad_folder' ? t('errFolder') : item.error === 'missing' ? t('errMissing') : t('errGeneric');
     const d = new Date(item.capturedAt || item.createdAt);
     const pos = item.pos;
     const rows = [
@@ -636,12 +669,17 @@
   $('detailRetry').onclick = async () => {
     const item = state.items.find((i) => i.id === detailId);
     if (!item) return;
+    if (item.error === 'bad_folder' && !state.folders.some((f) => f.id === state.currentFolder)) {
+      closeSheet('detailSheet'); openSheet('folderSheet'); refreshFolders(false); toast(t('pickFolderFirst'), true);
+      return;
+    }
+    item.tries = 0; item.directFails = 0;
     await requeue(item);
     closeSheet('detailSheet'); render(); processQueue();
   };
   $('detailDelete').onclick = async () => {
     const item = state.items.find((i) => i.id === detailId);
-    if (!item || !confirm(t('confirmDelete'))) return;
+    if (!item || !confirm(t(item.driveId ? 'confirmRemoveRecord' : 'confirmDelete'))) return;
     await delItem(item.id); await delBlob(item.id); await delBlob(item.id + '_p');
     state.items = state.items.filter((i) => i.id !== item.id);
     closeSheet('detailSheet'); render(); toast(t('deleted'));

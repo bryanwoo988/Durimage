@@ -2,6 +2,15 @@
 // When releasing: add a new entry at the TOP and set the same version in sw.js (VERSION).
 window.DURIMAGE_CHANGELOG = [
   {
+    version: '1.3.1',
+    date: '2026-11-04T16:30:00Z',
+    notes: {
+      zh: ['保存多张照片时又拍了新照片，新照片不会再不见', '「保存照片」画面不小心点到上方空白处，不会再把刚拍的照片丢掉', '信号不稳或 Google 一时忙碌时，会自动重试上传，不用手动按', '新手机第一次上传断线一下，不会再把照片变成压缩版', '手机空间不足时会提示，删除排队中的照片不会再自己跑回来'],
+      en: ['A photo taken while another batch is saving is no longer lost', 'Tapping the empty area above "Save photos" no longer throws the photo away', 'Uploads retry by themselves on weak signal or when Google is busy', 'A brief drop on a new phone no longer turns a photo into a compressed copy', 'Shows a message when phone storage is full; deleted queued photos stay deleted'],
+      ms: ['Foto yang diambil semasa kumpulan lain disimpan tidak lagi hilang', 'Ketik ruang kosong di atas "Simpan foto" tidak lagi membuang foto', 'Muat naik cuba semula sendiri bila liputan lemah atau Google sibuk', 'Gangguan singkat pada telefon baharu tidak lagi menukar foto kepada salinan dimampatkan', 'Mesej bila storan telefon penuh; foto beratur yang dipadam kekal dipadam'],
+    },
+  },
+  {
     version: '1.3.0',
     date: '2026-11-04T15:45:00Z',
     notes: {

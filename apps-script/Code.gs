@@ -157,7 +157,11 @@ function getLogSheet_(root, tz) {
   if (id) {
     try {
       // A Sheet moved to the Drive trash can still be opened by ID, so check for that too.
-      if (!DriveApp.getFileById(id).isTrashed()) return SpreadsheetApp.openById(id).getSheets()[0];
+      if (!DriveApp.getFileById(id).isTrashed()) {
+        const ss = SpreadsheetApp.openById(id);
+        // Always the "注解" tab, even if the admin adds other tabs in front of it.
+        return ss.getSheetByName('注解') || ss.getSheets()[0];
+      }
     } catch (e) { /* permanently deleted → create a new one */ }
   }
   const ss = SpreadsheetApp.create('Durimage 照片记录');

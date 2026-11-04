@@ -1,7 +1,7 @@
 // Service worker: offline app shell + automatic updates.
 // Bump VERSION (and add an entry at the top of changelog.js) for every release.
 // Any change to this file makes phones install the new version automatically.
-const VERSION = '1.3.0';
+const VERSION = '1.3.1';
 const CACHE = 'durimage-' + VERSION;
 const SHELL = [
   './', 'index.html', 'styles.css', 'app.js', 'i18n.js', 'config.js', 'changelog.js', 'manifest.webmanifest',
@@ -30,7 +30,8 @@ self.addEventListener('fetch', (e) => {
   const url = new URL(e.request.url);
   if (e.request.method !== 'GET' || url.origin !== self.location.origin) return;
   e.respondWith(
-    fetch(e.request, { cache: 'no-cache' })
+    // Navigations are fetched as-is (some browsers reject or alter a navigate request given options).
+    fetch(e.request.mode === 'navigate' ? e.request : new Request(e.request, { cache: 'no-cache' }))
       .then((res) => {
         if (res.ok) { const copy = res.clone(); caches.open(CACHE).then((c) => c.put(e.request, copy)); }
         return res;
