@@ -5,11 +5,13 @@
 ## 运作方式
 
 ```
-手机 App（GitHub Pages）  ──照片 + 团队密码──▶  Apps Script（用你的账号执行）  ──▶  你的 Google Drive
+1. 手机 ──团队密码 + 照片资料──▶ Apps Script（用你的账号执行）──开上传通道──▶ Google Drive
+2. 手机 ──────────────── 原图直接上传 ────────────────────────────────▶ 你的 Google Drive
 ```
 
 - App 是纯静态网页，没有服务器。
-- 中间的 Apps Script 用你的 Google 账号运行，所以照片用的是你的 Drive 空间。
+- Apps Script 用你的 Google 账号运行，只负责验证密码、开一个"只能写这一张照片"的上传通道。照片原图由手机直接传进你的 Drive，所以没有大小限制，也不会被压缩。
+- 你的 Google 登录凭证不会传到手机上。
 - 团队密码存在 Apps Script 的 Script Properties 里，不在程序码、也不在 GitHub。
 
 ## 工人怎么用
@@ -23,7 +25,8 @@
 上传到 Drive 的照片：
 - 文件名：`durian_<文件夹>_<日期_时间>_<名字>_<编号>.jpg`
 - 描述：备注、拍摄者、拍摄时间、GPS 座标和 Google Maps 链接
-- 照片会缩到长边 2560px 的 JPEG（约 1–2 MB）。原图的 EXIF 资料不会保留，GPS 另外写在描述里。
+- **上传的是原图**（完整分辨率，保留相机的 EXIF 资料）。
+- 备用方案：如果某支手机无法直传原图，那支手机会改传压缩版（长边 2560px），描述最后会注明 `Compressed copy`。这只会在该手机从来没成功传过原图时才启用，避免因为一时没信号就降级。
 
 ## 一次性设置（管理员）
 
@@ -49,7 +52,7 @@ App 会自动列出总文件夹下的**子文件夹**。以后新增子文件夹
 4. 右上 **部署（Deploy）→ 新部署（New deployment）** → 类型选 **网页应用（Web app）**：
    - 执行身份（Execute as）：**我（Me）**
    - 谁可以访问（Who has access）：**任何人（Anyone）**
-5. 按部署，第一次会要求授权你的 Google 账号（会出现"Google 尚未验证此应用"，按 *Advanced → Go to Durimage* 继续，因为这是你自己的脚本）。
+5. 按部署，第一次会要求授权你的 Google 账号（会要求 Drive 和"连接外部服务"两项权限，后者用来开上传通道）（会出现"Google 尚未验证此应用"，按 *Advanced → Go to Durimage* 继续，因为这是你自己的脚本）。
 6. 复制 **网页应用网址**（结尾是 `/exec`）。
 
 ### 3. 把网址填进 App
@@ -61,6 +64,10 @@ SCRIPT_URL: 'https://script.google.com/macros/s/xxxxxxxx/exec',
 ```
 
 提交到 GitHub，GitHub Pages 会自动更新。
+
+## 分享 App
+
+右上角 QR 按钮（或 设置 → 分享 App）会显示 App 网址的 QR code，对方用手机相机扫描就能打开。QR 里**不含**团队密码，要另外告诉对方。
 
 ## 更改团队密码
 
@@ -92,5 +99,7 @@ python3 -m http.server 8765
 | `app.js` | 首次设置、拍照、压缩、上传队列（IndexedDB） |
 | `i18n.js` | 三语文字 |
 | `config.js` | Apps Script 网址 |
-| `apps-script/Code.gs` | 后端：验证密码、列文件夹、存照片 |
+| `apps-script/Code.gs` | 后端：验证密码、列文件夹、开上传通道（原图）、备用压缩上传 |
+| `icons/` | App icon（榴莲法师）与 header 用的 `mark.svg` |
+| `vendor/qrcode.js` | QR code 产生器（MIT，Kazuhiko Arase） |
 | `sw.js` / `manifest.webmanifest` | PWA 离线缓存与安装 |

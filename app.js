@@ -3,7 +3,7 @@
 
   const CFG = window.DURIMAGE_CONFIG || {};
   const DEMO = !CFG.SCRIPT_URL;
-  const MAX_EDGE = 2560;      // longest side after compression (px)
+  const MAX_EDGE = 2560;      // fallback only: longest side when original upload is impossible
   const JPEG_QUALITY = 0.85;
   const $ = (id) => document.getElementById(id);
 
@@ -46,29 +46,23 @@
     for (const [k, v] of Object.entries(vars)) s = s.replaceAll('{' + k + '}', v);
     return s;
   };
-  function langButtons(container) {
-    container.innerHTML = '';
-    for (const code of Object.keys(I18N)) {
-      const b = document.createElement('button');
-      b.type = 'button';
-      b.textContent = I18N[code]._name;
-      b.className = code === state.lang ? 'on' : '';
-      b.onclick = () => setLang(code);
-      container.appendChild(b);
-    }
-  }
   function applyI18n() {
     document.documentElement.lang = state.lang === 'zh' ? 'zh-Hans' : state.lang;
     document.querySelectorAll('[data-i18n]').forEach((el) => { el.textContent = t(el.dataset.i18n); });
     document.querySelectorAll('[data-i18n-ph]').forEach((el) => { el.placeholder = t(el.dataset.i18nPh); });
-    $('langBtn').textContent = I18N[state.lang]._label;
+    // One button cycles 华文 → EN → BM → 华文
+    $('langLabel').textContent = I18N[state.lang]._label;
+    $('onboardLangLabel').textContent = I18N[state.lang]._label;
+    $('langName').textContent = I18N[state.lang]._name;
     $('pwStep').textContent = t('step', { n: 1 });
     $('nameStep').textContent = t('step', { n: 2 });
-    langButtons($('langSeg'));
-    langButtons($('onboardLang'));
     render();
   }
   function setLang(code) { state.lang = code; store.set('lang', code); applyI18n(); }
+  function cycleLang() {
+    const codes = Object.keys(I18N);
+    setLang(codes[(codes.indexOf(state.lang) + 1) % codes.length]);
+  }
 
   // ---------- IndexedDB (queue survives offline + app restarts) ----------
   let dbp;
@@ -127,7 +121,7 @@
     clearTimeout(toastTimer);
     toastTimer = setTimeout(() => { el.className = 'toast'; }, 2800);
   }
-  const openSheet = (id) => { $(id).hidden = false; };
+  const openSheet = (id) => { clearTimeout(toastTimer); $('toast').className = 'toast'; $(id).hidden = false; };
   const closeSheet = (id) => { $(id).hidden = true; };
   document.querySelectorAll('.sheet-backdrop').forEach((bd) => {
     bd.addEventListener('click', (e) => {
@@ -326,28 +320,26 @@
     }, () => {}, { enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 });
   }
 
-  // Resize to MAX_EDGE and re-encode as JPEG. Falls back to the original file if the
-  // browser cannot decode it (e.g. HEIC outside Safari).
+  const PLACEHOLDER = 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><rect width="10" height="10" fill="#cfd8cf"/></svg>');
+
+  // Draw an image scaled so its longest side is maxEdge (or shortest side is minEdge).
+  async function drawScaled(file, { maxEdge, minEdge }) {
+    const bmp = await createImageBitmap(file);
+    const scale = maxEdge ? Math.min(1, maxEdge / Math.max(bmp.width, bmp.height)) : minEdge / Math.min(bmp.width, bmp.height);
+    const c = document.createElement('canvas');
+    c.width = Math.round(bmp.width * scale); c.height = Math.round(bmp.height * scale);
+    c.getContext('2d').drawImage(bmp, 0, 0, c.width, c.height);
+    bmp.close?.();
+    return c;
+  }
+  async function makeThumb(file) {
+    try { return (await drawScaled(file, { minEdge: 240 })).toDataURL('image/jpeg', 0.7); }
+    catch { return PLACEHOLDER; }
+  }
+  // Only used as a fallback when sending the original straight to Drive is not possible.
   async function compress(file) {
-    try {
-      const bmp = await createImageBitmap(file);
-      const scale = Math.min(1, MAX_EDGE / Math.max(bmp.width, bmp.height));
-      const c = document.createElement('canvas');
-      c.width = Math.round(bmp.width * scale); c.height = Math.round(bmp.height * scale);
-      c.getContext('2d').drawImage(bmp, 0, 0, c.width, c.height);
-      const thumbC = document.createElement('canvas');
-      const ts = 240 / Math.min(c.width, c.height);
-      thumbC.width = Math.round(c.width * ts); thumbC.height = Math.round(c.height * ts);
-      thumbC.getContext('2d').drawImage(c, 0, 0, thumbC.width, thumbC.height);
-      bmp.close?.();
-      const blob = await new Promise((r) => c.toBlob(r, 'image/jpeg', JPEG_QUALITY));
-      return { blob, mime: 'image/jpeg', ext: 'jpg', thumb: thumbC.toDataURL('image/jpeg', 0.7) };
-    } catch (e) {
-      console.warn('compress failed, using original', e);
-      const ext = (file.name.split('.').pop() || 'jpg').toLowerCase();
-      return { blob: file, mime: file.type || 'image/jpeg', ext,
-        thumb: 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><rect width="10" height="10" fill="#cfd8cf"/></svg>') };
-    }
+    const c = await drawScaled(file, { maxEdge: MAX_EDGE });
+    return new Promise((r) => c.toBlob(r, 'image/jpeg', JPEG_QUALITY));
   }
 
   const pad = (n) => String(n).padStart(2, '0');
@@ -379,14 +371,15 @@
 
     for (let i = 0; i < files.length; i++) {
       const id = crypto.randomUUID ? crypto.randomUUID().replace(/-/g, '') : (Date.now().toString(36) + Math.random().toString(36).slice(2));
-      const c = await compress(files[i]);
+      const f = files[i];
+      const ext = ((f.name.match(/\.([a-z0-9]+)$/i) || [])[1] || 'jpg').toLowerCase();
       const item = {
         id, createdAt: Date.now() + i, status: 'queued',
         folderId: folder.id, folderName: folder.name,
-        name: fileName(new Date(now.getTime() + i * 1000), folder.name, c.ext, id),
-        mime: c.mime, description, thumb: c.thumb,
+        name: fileName(new Date(now.getTime() + i * 1000), folder.name, ext, id),
+        mime: f.type || 'image/jpeg', size: f.size, description, thumb: await makeThumb(f),
       };
-      await putBlob(id, c.blob);
+      await putBlob(id, f); // the untouched original
       await putItem(item);
       state.items.push(item);
     }
@@ -404,14 +397,39 @@
     r.readAsDataURL(blob);
   });
 
+  // Original photo: Apps Script opens a Drive upload session, the phone sends the file
+  // straight to Drive (no Google login, no size limit from Apps Script).
+  // If this device cannot do that, fall back to a compressed copy sent through Apps Script.
   async function uploadOne(item) {
     const blob = await getBlob(item.id);
     if (!blob) throw new Error('missing blob');
-    return api({
-      action: 'upload', key: state.password,
-      folderId: item.folderId, name: item.name, mimeType: item.mime,
-      description: item.description, data: await toBase64(blob),
+    if (DEMO) return api({ action: 'upload' });
+
+    const ses = await api({
+      action: 'session', key: state.password, origin: location.origin,
+      folderId: item.folderId, name: item.name, mimeType: item.mime, size: blob.size,
+      description: item.description,
     });
+    if (!ses.ok || ses.duplicate) return ses;
+
+    try {
+      const put = await fetch(ses.uploadUrl, { method: 'PUT', headers: { 'Content-Type': item.mime }, body: blob });
+      if (!put.ok) throw new Error('put ' + put.status);
+      const j = await put.json();
+      store.set('directOk', true);
+      return { ok: true, id: j.id };
+    } catch (e) {
+      // A device that has sent originals before → this is just a network problem, retry later.
+      if (store.get('directOk', false) || !navigator.onLine) throw e;
+      console.warn('direct upload not possible here, sending compressed copy', e);
+      const small = await compress(blob);
+      return api({
+        action: 'upload', key: state.password,
+        folderId: item.folderId, name: item.name.replace(/\.[^.]+$/, '.jpg'), mimeType: 'image/jpeg',
+        description: item.description + '\n(Compressed copy: original upload not supported on this device)',
+        data: await toBase64(small),
+      });
+    }
   }
 
   async function processQueue() {
@@ -484,9 +502,32 @@
 
   // ---------- Settings ----------
   $('settingsBtn').onclick = () => openSheet('settingsSheet');
-  $('langBtn').onclick = () => {
-    const codes = Object.keys(I18N);
-    setLang(codes[(codes.indexOf(state.lang) + 1) % codes.length]);
+  $('langBtn').onclick = cycleLang;
+  $('onboardLangBtn').onclick = cycleLang;
+  $('langCycleBtn').onclick = cycleLang;
+
+  // ---------- Share via QR ----------
+  const shareUrl = () => location.origin + location.pathname.replace(/index\.html$/, '');
+  function openShare() {
+    const url = shareUrl();
+    const qr = qrcode(0, 'M');
+    qr.addData(url);
+    qr.make();
+    $('qrBox').innerHTML = qr.createSvgTag({ cellSize: 6, margin: 2, scalable: true });
+    $('shareUrl').textContent = url;
+    $('nativeShareBtn').hidden = !navigator.share;
+    $('nativeShareBtn').parentElement.classList.toggle('single', !navigator.share);
+    closeSheet('settingsSheet');
+    openSheet('shareSheet');
+  }
+  $('shareBtn').onclick = openShare;
+  $('shareRowBtn').onclick = openShare;
+  $('copyLinkBtn').onclick = async () => {
+    try { await navigator.clipboard.writeText(shareUrl()); toast(t('linkCopied')); }
+    catch { prompt(t('copyLink'), shareUrl()); }
+  };
+  $('nativeShareBtn').onclick = () => {
+    navigator.share({ title: 'Durimage', text: t('shareDesc'), url: shareUrl() }).catch(() => {});
   };
   $('gpsToggle').onchange = (e) => { state.gps = e.target.checked; store.set('gps', state.gps); };
   $('editNameBtn').onclick = () => { closeSheet('settingsSheet'); showOnboard('editName'); };

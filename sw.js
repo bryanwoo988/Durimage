@@ -1,8 +1,8 @@
 // App-shell cache. Google APIs are never cached.
-const CACHE = 'durimage-v2';
+const CACHE = 'durimage-v3';
 const SHELL = [
   './', 'index.html', 'styles.css', 'app.js', 'i18n.js', 'config.js', 'manifest.webmanifest',
-  'icons/icon.svg', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/apple-touch-icon.png',
+  'icons/icon.svg', 'icons/mark.svg', 'vendor/qrcode.js', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/apple-touch-icon.png',
 ];
 
 self.addEventListener('install', (e) => {
