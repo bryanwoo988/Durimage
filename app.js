@@ -836,7 +836,7 @@
 
   window.addEventListener('online', () => { render(); processQueue(); });
   window.addEventListener('offline', render);
-  document.addEventListener('visibilitychange', () => { if (!document.hidden) { processQueue(); checkForUpdate(false); maybeReload(); } });
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) { setAppHeight(); processQueue(); checkForUpdate(false); maybeReload(); } });
 
   // iPhone home-screen apps: after the keyboard closes, the window can stay shrunk (bottom bar
   // floats up, strip at the bottom). Scrolling back to the top once the last field loses focus
@@ -851,7 +851,27 @@
     }, 120);
   });
   // Keep --app-h equal to the real window height (rotation, iOS toolbars, keyboard closing).
-  function setAppHeight() { document.documentElement.style.setProperty('--app-h', window.innerHeight + 'px'); }
+  function setAppHeight() {
+    document.documentElement.style.setProperty('--app-h', window.innerHeight + 'px');
+    checkViewportGap();
+  }
+  // Detects the iPhone home-screen bug where the window is shorter than the screen (keyboard closed).
+  // Only iOS home-screen apps (navigator.standalone): there the window normally fills the whole screen.
+  function checkViewportGap() {
+    const html = document.documentElement;
+    if (navigator.standalone !== true) { html.classList.remove('vp-gap'); return; }
+    const vv = window.visualViewport;
+    if (vv && vv.height < window.innerHeight - 80) return; // keyboard is open: leave as is
+    const full = window.innerWidth < window.innerHeight ? screen.height : screen.width;
+    const gap = Math.round(full - window.innerHeight);
+    html.classList.toggle('vp-gap', gap > 20 && gap < 140);
+  }
+  // Right after launch/reload, give iOS a nudge to recompute the window, then re-check.
+  function nudgeViewport() {
+    if (navigator.standalone !== true) return;
+    setTimeout(() => { window.scrollTo(0, 0); setAppHeight(); }, 300);
+    setTimeout(setAppHeight, 1200);
+  }
   window.addEventListener('resize', setAppHeight);
   window.addEventListener('orientationchange', () => setTimeout(setAppHeight, 300));
 
@@ -877,5 +897,6 @@
     if (!state.onboardMode) maybeShowWhatsNew();
     setupServiceWorker();
     hideSplash();
+    setAppHeight(); nudgeViewport();
   })();
 })();

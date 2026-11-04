@@ -2,6 +2,15 @@
 // When releasing: add a new entry at the TOP and set the same version in sw.js (VERSION).
 window.DURIMAGE_CHANGELOG = [
   {
+    version: '1.3.2',
+    date: '2026-11-04T16:50:00Z',
+    notes: {
+      zh: ['修正 iPhone 主屏幕 App 自动更新后，首页底部导航栏往上浮的问题'],
+      en: ['Fixed the bottom bar floating up on the iPhone home-screen app after an automatic update'],
+      ms: ['Membaiki bar bawah yang terapung pada aplikasi skrin utama iPhone selepas kemas kini automatik'],
+    },
+  },
+  {
     version: '1.3.1',
     date: '2026-11-04T16:30:00Z',
     notes: {

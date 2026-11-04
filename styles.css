@@ -506,3 +506,9 @@ body.ob-mode .app, body.ob-mode .dock { display: none; }
 @keyframes splashDot { 40% { opacity: 1; transform: translateY(-4px); } }
 @keyframes splashIn { from { opacity: 0; transform: translateY(6px); } }
 @media (prefers-reduced-motion: reduce) { .splash-dots i, .splash-sub { animation: none; } }
+
+/* iPhone home-screen app bug: after the app reloads itself (e.g. an automatic update) the window can
+   end above the real screen bottom. The home-indicator area is then outside the window, so drop the
+   bottom safe-area padding; bars and sheets sit on the window edge and the dock colour continues below. */
+html.vp-gap { --safe-b: 0px; }
+html.vp-gap .dock { padding-bottom: 10px; }
