@@ -55,17 +55,6 @@
       <div class="banner banner-offline" id="offlineBanner" hidden>
         <svg><use href="#i-offline"/></svg><span data-i18n="offline"></span>
       </div>
-      <button class="banner banner-warn" id="reconnectBanner" hidden>
-        <svg><use href="#i-cloud"/></svg><span id="reconnectText"></span>
-      </button>
-
-      <section class="card connect-card" id="connectCard" hidden>
-        <div class="connect-art"><svg><use href="#i-cloud"/></svg></div>
-        <h2 data-i18n="connectTitle"></h2>
-        <p data-i18n="connectDesc"></p>
-        <button class="btn btn-google" id="signInBtn"><svg><use href="#i-google"/></svg><span data-i18n="connectBtn"></span></button>
-      </section>
-
       <button class="card dest-card" id="destCard">
         <div class="dest-icon"><svg><use href="#i-folder-fill"/></svg></div>
         <div class="dest-text">
@@ -139,7 +128,7 @@
       </div>
       <p class="hint" data-i18n="foldersHint"></p>
       <ul class="folder-list" id="folderList"></ul>
-      <button class="btn btn-outline btn-block" id="addFolderBtn"><svg><use href="#i-plus"/></svg><span data-i18n="addFolder"></span></button>
+      <button class="btn btn-outline btn-block" id="refreshFoldersBtn"><svg><use href="#i-retry"/></svg><span data-i18n="refresh"></span></button>
     </div>
   </div>
 
@@ -164,13 +153,50 @@
       </div>
       <div class="set-group set-row">
         <div>
-          <div class="set-label" data-i18n="account"></div>
-          <div class="set-title" id="accountName"></div>
+          <div class="set-label" data-i18n="yourName"></div>
+          <div class="set-title" id="nameValue"></div>
         </div>
-        <button class="btn btn-small btn-outline" id="accountBtn"></button>
+        <button class="btn btn-small btn-outline" id="editNameBtn" data-i18n="edit"></button>
+      </div>
+      <div class="set-group set-row">
+        <div>
+          <div class="set-label" data-i18n="teamPw"></div>
+          <div class="set-title">••••••</div>
+        </div>
+        <button class="btn btn-small btn-outline" id="reenterPwBtn" data-i18n="reenterPw"></button>
       </div>
       <button class="btn btn-ghost btn-block" id="clearHistoryBtn" data-i18n="clearHistory"></button>
       <div class="version">Durimage v1.0</div>
+    </div>
+  </div>
+
+  <!-- Onboarding: step 1 team password, step 2 name -->
+  <div class="onboard" id="onboard" hidden>
+    <div class="onboard-inner">
+      <div class="onboard-lang" id="onboardLang"></div>
+      <div class="onboard-hero">
+        <svg class="onboard-logo"><use href="#i-logo"/></svg>
+        <h1 data-i18n="welcome"></h1>
+        <p data-i18n="welcomeDesc"></p>
+      </div>
+      <form class="onboard-card" id="pwForm" novalidate>
+        <div class="onboard-step" id="pwStep"></div>
+        <h2 data-i18n="pwTitle"></h2>
+        <p data-i18n="pwDesc"></p>
+        <div class="onboard-notice" id="pwNotice" hidden data-i18n="pwChanged"></div>
+        <input class="input" id="pwInput" type="password" autocomplete="current-password" data-i18n-ph="pwPh">
+        <div class="form-err" id="pwErr"></div>
+        <button class="btn btn-primary btn-block" id="pwSubmit" type="submit" data-i18n="next"></button>
+        <button class="btn btn-ghost btn-block" id="pwCancel" type="button" data-i18n="cancel" hidden></button>
+      </form>
+      <form class="onboard-card" id="nameForm" novalidate hidden>
+        <div class="onboard-step" id="nameStep"></div>
+        <h2 data-i18n="nameTitle"></h2>
+        <p data-i18n="nameDesc"></p>
+        <input class="input" id="nameInput" type="text" autocomplete="name" maxlength="40" data-i18n-ph="namePh">
+        <button class="btn btn-primary btn-block" id="nameSubmit" type="submit" data-i18n="start"></button>
+        <button class="btn btn-ghost btn-block" id="nameCancel" type="button" data-i18n="cancel" hidden></button>
+      </form>
     </div>
   </div>
 

@@ -1,64 +1,96 @@
 # Durimage
 
-榴莲病虫害拍照 PWA：拍照 → 选 Google Drive 文件夹 → 自动上传。中文 / English / Bahasa Melayu。
+榴莲病虫害拍照 PWA。工人不用登录 Google，拍的照片全部存进**管理员（你）的 Google Drive**。中文 / English / Bahasa Melayu。
 
-纯静态文件（HTML/CSS/JS），不需要后端，不需要 build。
+## 运作方式
 
-## 文件
+```
+手机 App（GitHub Pages）  ──照片 + 团队密码──▶  Apps Script（用你的账号执行）  ──▶  你的 Google Drive
+```
 
-| 文件 | 作用 |
-|---|---|
-| `index.html` / `styles.css` | 页面与样式 |
-| `app.js` | 拍照、上传队列（IndexedDB）、Google 登录、Picker |
-| `i18n.js` | 三语文字 |
-| `config.js` | 填 Google Client ID / API key / Project number |
-| `sw.js` / `manifest.webmanifest` | PWA 离线缓存与安装 |
+- App 是纯静态网页，没有服务器。
+- 中间的 Apps Script 用你的 Google 账号运行，所以照片用的是你的 Drive 空间。
+- 团队密码存在 Apps Script 的 Script Properties 里，不在程序码、也不在 GitHub。
 
-`config.js` 的 `CLIENT_ID` 留空时是 **演示模式**（假文件夹、假上传），可先看界面。
+## 工人怎么用
 
-## 用到的 Google API
+1. 打开 App，第一次要做两步：
+   - **第 1 步：输入团队密码**（需要网络，密码错了不能继续）
+   - **第 2 步：输入名字**（没填不能继续）
+2. 按中间快门拍照（或从相册选）→ 选文件夹 → 可写备注 → 保存。
+3. 照片先存在手机里，有网络就自动上传；果园没信号会排队，有网络再打开 App 会继续传。
 
-| API | 用途 |
-|---|---|
-| Google Identity Services（token model） | 浏览器内 OAuth 登录拿 access token |
-| Google Picker API | 让用户从自己 Drive 选已建好的文件夹 |
-| Google Drive API v3 `files.create`（resumable upload） | 把照片上传到选定文件夹 |
-| Drive API `about.get` | 显示登录账号 |
+上传到 Drive 的照片：
+- 文件名：`durian_<文件夹>_<日期_时间>_<名字>_<编号>.jpg`
+- 描述：备注、拍摄者、拍摄时间、GPS 座标和 Google Maps 链接
+- 照片会缩到长边 2560px 的 JPEG（约 1–2 MB）。原图的 EXIF 资料不会保留，GPS 另外写在描述里。
 
-OAuth scope 只用 `https://www.googleapis.com/auth/drive.file`（非敏感 scope）。App 只能访问：用户在 Picker 里选过的文件夹，以及 App 自己上传的文件。
+## 一次性设置（管理员）
 
-## Google Cloud 设置步骤
+### 1. 在 Drive 建文件夹
 
-1. 到 <https://console.cloud.google.com/> 新建项目（例：`durimage`）。
-2. **APIs & Services → Library**，启用 **Google Drive API** 和 **Google Picker API**。
-3. **OAuth consent screen**（Google Auth Platform）：
-   - User type 选 External（个人 Gmail）或 Internal（Workspace）。
-   - Scope 加 `.../auth/drive.file`。
-   - 保持 *Testing* 状态时，把会用这个 App 的 Gmail 加进 **Test users**（上限 100 人）。
-4. **Credentials → Create credentials → OAuth client ID**，类型 *Web application*：
-   - Authorized JavaScript origins 填你部署的网址，例如 `https://<你的用户名>.github.io`，本地测试加 `http://localhost:8765`。
-   - 复制 Client ID 填进 `config.js` 的 `CLIENT_ID`。
-5. **Credentials → Create credentials → API key**：限制为 *Google Picker API*，并加 HTTP referrer 限制为你的网址。填进 `API_KEY`。
-6. 项目首页（Dashboard）的 **Project number** 填进 `APP_ID`（Picker 需要它才能把文件夹权限授权给 App）。
+建一个总文件夹，例如 `Durimage`，里面建分类子文件夹（`果腐病`、`蛀果虫`、`叶斑病`…）。
+App 会自动列出总文件夹下的**子文件夹**。以后新增子文件夹，工人在 App 里点「刷新」就会出现。
 
-## 部署
+打开总文件夹，复制网址最后那段 ID：
+`https://drive.google.com/drive/folders/`**`1AbCdEf...`** ← 这段
 
-需要 HTTPS（相机、Service Worker、OAuth 都要求）。最简单：GitHub Pages（Settings → Pages → 选 branch / root）。
+### 2. 建 Apps Script
 
-本地测试：
+1. 打开 <https://script.google.com> → 新项目，命名 `Durimage`。
+2. 把 `apps-script/Code.gs` 的内容整个贴进去，取代原本的代码，存档。
+3. 左边 ⚙️ **项目设置（Project Settings）** → 拉到最下 **脚本属性（Script Properties）** → 新增两个：
+
+   | 属性 | 值 |
+   |---|---|
+   | `TEAM_PASSWORD` | 你要的团队密码 |
+   | `ROOT_FOLDER_ID` | 第 1 步复制的文件夹 ID |
+
+4. 右上 **部署（Deploy）→ 新部署（New deployment）** → 类型选 **网页应用（Web app）**：
+   - 执行身份（Execute as）：**我（Me）**
+   - 谁可以访问（Who has access）：**任何人（Anyone）**
+5. 按部署，第一次会要求授权你的 Google 账号（会出现"Google 尚未验证此应用"，按 *Advanced → Go to Durimage* 继续，因为这是你自己的脚本）。
+6. 复制 **网页应用网址**（结尾是 `/exec`）。
+
+### 3. 把网址填进 App
+
+打开 `config.js`，填入：
+
+```js
+SCRIPT_URL: 'https://script.google.com/macros/s/xxxxxxxx/exec',
+```
+
+提交到 GitHub，GitHub Pages 会自动更新。
+
+## 更改团队密码
+
+1. 打开 <https://script.google.com> → Durimage 项目 → ⚙️ 项目设置 → 脚本属性。
+2. 编辑 `TEAM_PASSWORD`，存档。**马上生效，不用重新部署。**
+3. 工人的手机下次上传或刷新文件夹时，App 会跳出「团队密码已更改」画面要他们输入新密码。还没上传的照片不会丢，输入后会继续上传。
+
+> 只有改 `Code.gs` 的代码才需要重新部署：部署 → 管理部署 → ✏️ 编辑 → 版本选「新版本」→ 部署（网址不变）。
+
+## 安全说明
+
+- 团队密码只能挡住"拿到网址就乱传"的情况，不是高强度保护。人员离开团队时建议改密码。
+- Apps Script 只允许把照片存进总文件夹的直接子文件夹，只收图片，单张上限 15 MB。
+
+## 本地测试
 
 ```bash
 python3 -m http.server 8765
 # 打开 http://localhost:8765
 ```
 
-## 使用流程
+`config.js` 的 `SCRIPT_URL` 留空时是演示模式：假文件夹、假上传，任何密码都可以。
 
-1. 在 Google Drive 先建好文件夹（例：`果腐病`、`蛀果虫`、`叶斑病`）。
-2. App 里登录 Google → 文件夹 → 「从 Drive 添加文件夹」→ 多选。
-3. 按中间快门拍照（用手机原生相机，保留完整分辨率和 EXIF）→ 选文件夹 → 可写备注 → 保存。
-4. 照片先存手机（IndexedDB），有网络就自动上传；果园没信号时会排队，回到有网络的地方打开 App 继续传。
+## 文件
 
-上传到 Drive 的文件：
-- 文件名：`durian_<文件夹名>_YYYYMMDD_HHMMSS.jpg`
-- 描述（Description）：备注、拍摄时间、GPS 座标与 Google Maps 链接
+| 文件 | 作用 |
+|---|---|
+| `index.html` / `styles.css` | 页面与样式 |
+| `app.js` | 首次设置、拍照、压缩、上传队列（IndexedDB） |
+| `i18n.js` | 三语文字 |
+| `config.js` | Apps Script 网址 |
+| `apps-script/Code.gs` | 后端：验证密码、列文件夹、存照片 |
+| `sw.js` / `manifest.webmanifest` | PWA 离线缓存与安装 |

@@ -2,40 +2,42 @@
   'use strict';
 
   const CFG = window.DURIMAGE_CONFIG || {};
-  const DEMO = !CFG.CLIENT_ID;
-  const SCOPE = 'https://www.googleapis.com/auth/drive.file';
+  const DEMO = !CFG.SCRIPT_URL;
+  const MAX_EDGE = 2560;      // longest side after compression (px)
+  const JPEG_QUALITY = 0.85;
   const $ = (id) => document.getElementById(id);
 
-  // ---------- Local storage helpers (all wrapped: storage can throw) ----------
+  // ---------- Local storage (wrapped: storage can throw) ----------
   const store = {
     get(k, d) { try { const v = localStorage.getItem('dm_' + k); return v == null ? d : JSON.parse(v); } catch { return d; } },
     set(k, v) { try { localStorage.setItem('dm_' + k, JSON.stringify(v)); } catch {} },
     del(k) { try { localStorage.removeItem('dm_' + k); } catch {} },
   };
-
   const detectLang = () => {
     const n = (navigator.language || 'en').toLowerCase();
     if (n.startsWith('zh')) return 'zh';
     if (n.startsWith('ms') || n.startsWith('id')) return 'ms';
     return 'en';
   };
+  const DEMO_FOLDERS = [
+    { id: 'demo1', name: '果腐病 Phytophthora' },
+    { id: 'demo2', name: '蛀果虫 Fruit borer' },
+    { id: 'demo3', name: '叶斑病 Leaf spot' },
+  ];
 
   const state = {
     lang: store.get('lang', detectLang()),
-    folders: store.get('folders', DEMO ? [
-      { id: 'demo1', name: '果腐病 Phytophthora' },
-      { id: 'demo2', name: '蛀果虫 Fruit borer' },
-      { id: 'demo3', name: '叶斑病 Leaf spot' },
-    ] : []),
+    password: store.get('pw', null),
+    name: store.get('name', ''),
+    folders: store.get('folders', []),
     currentFolder: store.get('currentFolder', null),
     gps: store.get('gps', true),
-    token: store.get('token', null),     // { access_token, expires_at }
-    user: store.get('user', null),       // { name, email }
-    items: [],                           // queue/history records (without blobs)
-    pending: [],                         // Files waiting in review sheet
+    items: [],
+    pending: [],
     reviewFolder: null,
     position: null,
     uploading: false,
+    onboardMode: null, // 'pw' | 'name' | 'reenter' | 'editName' | 'pwChanged'
   };
 
   // ---------- i18n ----------
@@ -44,24 +46,31 @@
     for (const [k, v] of Object.entries(vars)) s = s.replaceAll('{' + k + '}', v);
     return s;
   };
+  function langButtons(container) {
+    container.innerHTML = '';
+    for (const code of Object.keys(I18N)) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.textContent = I18N[code]._name;
+      b.className = code === state.lang ? 'on' : '';
+      b.onclick = () => setLang(code);
+      container.appendChild(b);
+    }
+  }
   function applyI18n() {
     document.documentElement.lang = state.lang === 'zh' ? 'zh-Hans' : state.lang;
     document.querySelectorAll('[data-i18n]').forEach((el) => { el.textContent = t(el.dataset.i18n); });
     document.querySelectorAll('[data-i18n-ph]').forEach((el) => { el.placeholder = t(el.dataset.i18nPh); });
     $('langBtn').textContent = I18N[state.lang]._label;
-    $('langSeg').innerHTML = '';
-    for (const code of Object.keys(I18N)) {
-      const b = document.createElement('button');
-      b.textContent = I18N[code]._label === 'EN' ? 'English' : I18N[code]._label === 'BM' ? 'Melayu' : '中文';
-      b.className = code === state.lang ? 'on' : '';
-      b.onclick = () => setLang(code);
-      $('langSeg').appendChild(b);
-    }
+    $('pwStep').textContent = t('step', { n: 1 });
+    $('nameStep').textContent = t('step', { n: 2 });
+    langButtons($('langSeg'));
+    langButtons($('onboardLang'));
     render();
   }
   function setLang(code) { state.lang = code; store.set('lang', code); applyI18n(); }
 
-  // ---------- IndexedDB (photo queue survives offline + app restarts) ----------
+  // ---------- IndexedDB (queue survives offline + app restarts) ----------
   let dbp;
   function db() {
     if (!dbp) dbp = new Promise((res, rej) => {
@@ -91,6 +100,24 @@
   const delItem = (id) => tx('items', 'readwrite', (s) => s.delete(id));
   const allItems = () => tx('items', 'readonly', (s) => s.getAll());
 
+  // ---------- Backend (Apps Script) ----------
+  // text/plain avoids a CORS preflight, which Apps Script cannot answer.
+  async function api(body) {
+    if (DEMO) {
+      await new Promise((r) => setTimeout(r, 600));
+      if (body.action === 'folders') return { ok: true, folders: DEMO_FOLDERS };
+      return { ok: true, id: 'demo' };
+    }
+    const r = await fetch(CFG.SCRIPT_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify(body),
+      redirect: 'follow',
+    });
+    if (!r.ok) throw new Error('http ' + r.status);
+    return r.json();
+  }
+
   // ---------- UI helpers ----------
   let toastTimer;
   function toast(msg, err = false) {
@@ -100,8 +127,8 @@
     clearTimeout(toastTimer);
     toastTimer = setTimeout(() => { el.className = 'toast'; }, 2800);
   }
-  function openSheet(id) { $(id).hidden = false; }
-  function closeSheet(id) { $(id).hidden = true; }
+  const openSheet = (id) => { $(id).hidden = false; };
+  const closeSheet = (id) => { $(id).hidden = true; };
   document.querySelectorAll('.sheet-backdrop').forEach((bd) => {
     bd.addEventListener('click', (e) => {
       if (e.target === bd || e.target.closest('[data-close]')) {
@@ -112,212 +139,159 @@
   });
   const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
-  const tokenValid = () => DEMO || (state.token && state.token.expires_at > Date.now() + 60_000);
-  const signedIn = () => DEMO || !!state.user || tokenValid();
+  // ---------- Onboarding ----------
+  // Step 1 (password) must succeed before step 2 (name); both before the camera.
+  function showOnboard(mode) {
+    state.onboardMode = mode;
+    clearTimeout(toastTimer); $('toast').className = 'toast';
+    const pwStep = mode === 'pw' || mode === 'reenter' || mode === 'pwChanged';
+    $('onboard').hidden = false;
+    $('pwForm').hidden = !pwStep;
+    $('nameForm').hidden = pwStep;
+    $('pwNotice').hidden = mode !== 'pwChanged';
+    $('pwCancel').hidden = mode !== 'reenter';
+    $('nameCancel').hidden = mode !== 'editName';
+    $('pwErr').textContent = '';
+    $('pwInput').value = '';
+    $('pwInput').classList.remove('bad');
+    $('nameInput').value = state.name || '';
+    setTimeout(() => (pwStep ? $('pwInput') : $('nameInput')).focus(), 50);
+  }
+  function hideOnboard() { $('onboard').hidden = true; state.onboardMode = null; }
+  function needsOnboard() {
+    if (!state.password) { showOnboard('pw'); return true; }
+    if (!state.name) { showOnboard('name'); return true; }
+    return false;
+  }
+
+  $('pwForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const pw = $('pwInput').value.trim();
+    const err = (msg) => { $('pwErr').textContent = msg; $('pwInput').classList.remove('bad'); void $('pwInput').offsetWidth; $('pwInput').classList.add('bad'); };
+    if (!pw) return err(t('wrongPw'));
+    if (!navigator.onLine && !DEMO) return err(t('needNet'));
+    const btn = $('pwSubmit');
+    btn.disabled = true; btn.textContent = t('checking');
+    try {
+      const res = await api({ action: 'folders', key: pw });
+      if (res.ok) {
+        state.password = pw; store.set('pw', pw);
+        setFolders(res.folders);
+        if (state.name) { hideOnboard(); processQueue(); } else showOnboard('name');
+        render();
+      } else if (res.error === 'bad_key') err(t('wrongPw'));
+      else err(t('serverErr'));
+    } catch (ex) {
+      console.error(ex); err(t('serverErr'));
+    } finally {
+      btn.disabled = false; btn.textContent = t('next');
+    }
+  });
+  $('nameForm').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const name = $('nameInput').value.trim();
+    if (!name) { $('nameInput').classList.remove('bad'); void $('nameInput').offsetWidth; $('nameInput').classList.add('bad'); return; }
+    state.name = name; store.set('name', name);
+    hideOnboard(); render(); processQueue();
+  });
+  $('pwCancel').onclick = hideOnboard;
+  $('nameCancel').onclick = hideOnboard;
 
   // ---------- Render ----------
   function render() {
     $('demoBanner').hidden = !DEMO;
     $('offlineBanner').hidden = navigator.onLine;
-    $('connectCard').hidden = signedIn();
-
-    const pending = state.items.filter((i) => i.status !== 'done');
-    const needsAuth = !DEMO && pending.length > 0 && !tokenValid() && navigator.onLine;
-    $('reconnectBanner').hidden = !needsAuth;
-    $('reconnectText').textContent = t('reconnect', { n: pending.length });
 
     const cur = state.folders.find((f) => f.id === state.currentFolder);
     $('destName').textContent = cur ? cur.name : t('noFolder') + ' · ' + t('tapToChoose');
     $('destName').classList.toggle('muted', !cur);
 
+    const pending = state.items.filter((i) => i.status !== 'done');
     const today = new Date().toDateString();
     $('statToday').textContent = state.items.filter((i) => new Date(i.createdAt).toDateString() === today).length;
     $('statPending').textContent = pending.length;
     $('statDone').textContent = state.items.filter((i) => i.status === 'done').length;
 
-    const grid = $('recentGrid');
     const items = [...state.items].sort((a, b) => b.createdAt - a.createdAt).slice(0, 30);
     $('emptyState').hidden = items.length > 0;
-    grid.innerHTML = items.map((i) => {
+    $('recentGrid').innerHTML = items.map((i) => {
       const icon = i.status === 'done' ? '<svg><use href="#i-check"/></svg>' : i.status === 'error' ? '<svg><use href="#i-retry"/></svg>' : '';
-      return `<button class="tile" data-id="${i.id}">
+      return `<button class="tile" data-id="${esc(i.id)}">
         <img src="${i.thumb}" alt="" loading="lazy">
         <div class="tile-folder">${esc(i.folderName)}</div>
         <div class="tile-badge b-${i.status}">${icon}<span>${t(i.status === 'error' ? 'retry' : i.status)}</span></div>
       </button>`;
     }).join('');
 
-    // Settings
     $('gpsToggle').checked = state.gps;
-    $('accountName').textContent = DEMO ? 'Demo' : state.user ? (state.user.email || state.user.name) : t('notSignedIn');
-    $('accountBtn').textContent = (!DEMO && signedIn()) ? t('signOut') : t('signIn');
-    $('accountBtn').hidden = DEMO;
-
+    $('nameValue').textContent = state.name || '—';
     renderFolderList();
   }
 
-  function folderChip(f, on) {
-    return `<svg><use href="#i-folder-fill"/></svg><span class="name">${esc(f.name)}</span>
+  const folderChip = (f, on) => `<svg><use href="#i-folder-fill"/></svg><span class="name">${esc(f.name)}</span>
       <span class="tick">${on ? '<svg><use href="#i-check"/></svg>' : ''}</span>`;
-  }
 
   function renderFolderList() {
     const ul = $('folderList');
-    if (!state.folders.length) { ul.innerHTML = `<li class="none">${t('noFolders')}</li>`; return; }
+    if (!state.folders.length) { ul.innerHTML = `<li class="none">${esc(t('noFolders'))}</li>`; return; }
     ul.innerHTML = state.folders.map((f) => `<li>
-      <button class="chip ${f.id === state.currentFolder ? 'on' : ''}" data-pick="${f.id}">${folderChip(f, f.id === state.currentFolder)}</button>
-      <button class="rm" data-rm="${f.id}" aria-label="${t('remove')}"><svg><use href="#i-x"/></svg></button>
+      <button class="chip ${f.id === state.currentFolder ? 'on' : ''}" data-pick="${esc(f.id)}">${folderChip(f, f.id === state.currentFolder)}</button>
     </li>`).join('');
   }
 
   function renderReviewFolders() {
-    const box = $('reviewFolders');
-    box.innerHTML = state.folders.map((f) => `<button class="chip ${f.id === state.reviewFolder ? 'on' : ''}" data-rf="${f.id}">${folderChip(f, f.id === state.reviewFolder)}</button>`).join('')
-      + `<button class="chip chip-add" data-addfolder><svg><use href="#i-plus"/></svg><span>${t('addFolder')}</span></button>`;
+    $('reviewFolders').innerHTML = state.folders.length
+      ? state.folders.map((f) => `<button class="chip ${f.id === state.reviewFolder ? 'on' : ''}" data-rf="${esc(f.id)}">${folderChip(f, f.id === state.reviewFolder)}</button>`).join('')
+      : `<div class="hint">${esc(t('noFolders'))}</div>`;
     $('saveBtn').textContent = t('saveBtn', { n: state.pending.length });
     $('saveBtn').disabled = !state.reviewFolder || !state.pending.length;
   }
 
-  // ---------- Folder management ----------
+  // ---------- Folders (come from sub-folders of the Drive root folder) ----------
   function setCurrentFolder(id) { state.currentFolder = id; store.set('currentFolder', id); }
-  function saveFolders() { store.set('folders', state.folders); }
+  function setFolders(list) {
+    state.folders = list || [];
+    store.set('folders', state.folders);
+    if (state.currentFolder && !state.folders.some((f) => f.id === state.currentFolder)) setCurrentFolder(null);
+    if (!state.currentFolder && state.folders.length === 1) setCurrentFolder(state.folders[0].id);
+  }
+  async function refreshFolders(showToast) {
+    if (!state.password || (!navigator.onLine && !DEMO)) { if (showToast) toast(t('offline'), true); return; }
+    try {
+      const res = await api({ action: 'folders', key: state.password });
+      if (res.ok) { setFolders(res.folders); render(); if (showToast) toast(t('refreshed')); }
+      else if (res.error === 'bad_key') passwordRejected();
+      else if (showToast) toast(t('serverErr'), true);
+    } catch (e) { console.error(e); if (showToast) toast(t('serverErr'), true); }
+  }
+  function passwordRejected() {
+    state.password = null; store.del('pw');
+    closeSheet('reviewSheet'); closeSheet('folderSheet'); closeSheet('settingsSheet');
+    showOnboard('pwChanged');
+  }
 
   $('folderList').addEventListener('click', (e) => {
     const pick = e.target.closest('[data-pick]');
-    const rm = e.target.closest('[data-rm]');
     if (pick) { setCurrentFolder(pick.dataset.pick); render(); closeSheet('folderSheet'); }
-    if (rm) {
-      const f = state.folders.find((x) => x.id === rm.dataset.rm);
-      if (f && confirm(t('confirmRemove', { f: f.name }))) {
-        state.folders = state.folders.filter((x) => x.id !== f.id);
-        if (state.currentFolder === f.id) setCurrentFolder(state.folders[0]?.id || null);
-        saveFolders(); render();
-      }
-    }
   });
-  $('destCard').onclick = () => openSheet('folderSheet');
-  $('foldersBtn').onclick = () => openSheet('folderSheet');
-  $('addFolderBtn').onclick = () => addFoldersFromDrive();
+  $('destCard').onclick = () => { openSheet('folderSheet'); refreshFolders(false); };
+  $('foldersBtn').onclick = () => { openSheet('folderSheet'); refreshFolders(false); };
+  $('refreshFoldersBtn').onclick = async () => {
+    const b = $('refreshFoldersBtn'); b.disabled = true;
+    await refreshFolders(true);
+    b.disabled = false;
+  };
   $('reviewFolders').addEventListener('click', (e) => {
     const rf = e.target.closest('[data-rf]');
     if (rf) { state.reviewFolder = rf.dataset.rf; renderReviewFolders(); }
-    if (e.target.closest('[data-addfolder]')) addFoldersFromDrive().then(() => {
-      if (!state.reviewFolder && state.folders.length) state.reviewFolder = state.folders[state.folders.length - 1].id;
-      renderReviewFolders();
-    });
   });
-
-  async function addFoldersFromDrive() {
-    if (DEMO) {
-      const name = prompt('Folder name (demo)');
-      if (name) {
-        const f = { id: 'demo' + Date.now(), name };
-        state.folders.push(f); saveFolders();
-        if (!state.currentFolder) setCurrentFolder(f.id);
-        render(); toast(t('folderAdded', { n: 1 }));
-      }
-      return;
-    }
-    if (!navigator.onLine) { toast(t('offline'), true); return; }
-    const token = await ensureToken(true);
-    if (!token) return;
-    await loadScript('https://apis.google.com/js/api.js');
-    await new Promise((r) => gapi.load('picker', r));
-    return new Promise((resolve) => {
-      const view = new google.picker.DocsView(google.picker.ViewId.FOLDERS)
-        .setIncludeFolders(true)
-        .setSelectFolderEnabled(true)
-        .setMimeTypes('application/vnd.google-apps.folder')
-        .setMode(google.picker.DocsViewMode.LIST);
-      const builder = new google.picker.PickerBuilder()
-        .addView(view)
-        .enableFeature(google.picker.Feature.MULTISELECT_ENABLED)
-        .enableFeature(google.picker.Feature.SUPPORT_DRIVES)
-        .setOAuthToken(token)
-        .setTitle(t('pickerTitle'))
-        .setLocale({ zh: 'zh-CN', en: 'en', ms: 'ms' }[state.lang])
-        .setCallback((data) => {
-          if (data.action === google.picker.Action.PICKED) {
-            let added = 0;
-            for (const d of data.docs) {
-              if (!state.folders.some((f) => f.id === d.id)) { state.folders.push({ id: d.id, name: d.name }); added++; }
-            }
-            saveFolders();
-            if (!state.currentFolder && state.folders.length) setCurrentFolder(state.folders[0].id);
-            render(); toast(t('folderAdded', { n: added }));
-            resolve();
-          } else if (data.action === google.picker.Action.CANCEL) resolve();
-        });
-      if (CFG.API_KEY) builder.setDeveloperKey(CFG.API_KEY);
-      if (CFG.APP_ID) builder.setAppId(CFG.APP_ID);
-      builder.build().setVisible(true);
-    });
-  }
-
-  // ---------- Google auth (Google Identity Services token model) ----------
-  const scripts = {};
-  function loadScript(src) {
-    if (!scripts[src]) scripts[src] = new Promise((res, rej) => {
-      const s = document.createElement('script');
-      s.src = src; s.async = true; s.onload = res; s.onerror = () => { delete scripts[src]; rej(new Error('load ' + src)); };
-      document.head.appendChild(s);
-    });
-    return scripts[src];
-  }
-
-  let tokenClient;
-  async function getTokenClient() {
-    await loadScript('https://accounts.google.com/gsi/client');
-    if (!tokenClient) tokenClient = google.accounts.oauth2.initTokenClient({ client_id: CFG.CLIENT_ID, scope: SCOPE, callback: () => {} });
-    return tokenClient;
-  }
-
-  // interactive=true must be called from a user tap (popup blockers).
-  async function ensureToken(interactive) {
-    if (DEMO) return 'demo';
-    if (tokenValid()) return state.token.access_token;
-    if (!interactive) return null;
-    try {
-      const client = await getTokenClient();
-      const resp = await new Promise((res) => {
-        client.callback = res;
-        client.error_callback = (err) => res({ error: err.type || 'popup' });
-        client.requestAccessToken({ prompt: state.user ? '' : 'consent', hint: state.user?.email });
-      });
-      if (resp.error) { toast(t('signInFirst'), true); return null; }
-      state.token = { access_token: resp.access_token, expires_at: Date.now() + (resp.expires_in - 30) * 1000 };
-      store.set('token', state.token);
-      if (!state.user) await loadUser();
-      render();
-      processQueue();
-      return state.token.access_token;
-    } catch (e) {
-      console.error(e); toast(t('signInFirst'), true); return null;
-    }
-  }
-  async function loadUser() {
-    try {
-      const r = await fetch('https://www.googleapis.com/drive/v3/about?fields=user(displayName,emailAddress)', { headers: { Authorization: 'Bearer ' + state.token.access_token } });
-      const j = await r.json();
-      state.user = { name: j.user.displayName, email: j.user.emailAddress };
-      store.set('user', state.user);
-    } catch {}
-  }
-  function signOut() {
-    if (state.token && window.google?.accounts?.oauth2) google.accounts.oauth2.revoke(state.token.access_token, () => {});
-    state.token = null; state.user = null;
-    store.del('token'); store.del('user');
-    render();
-  }
-  $('signInBtn').onclick = () => ensureToken(true);
-  $('reconnectBanner').onclick = () => ensureToken(true);
-  $('accountBtn').onclick = () => (signedIn() ? signOut() : ensureToken(true));
 
   // ---------- Capture flow ----------
   function onFiles(e) {
     const files = [...e.target.files].filter((f) => f.type.startsWith('image/') || /\.(heic|heif)$/i.test(f.name));
     e.target.value = '';
     if (!files.length) return;
+    if (needsOnboard()) return;
     state.pending = files;
     state.reviewFolder = state.currentFolder;
     const strip = $('reviewStrip');
@@ -352,25 +326,36 @@
     }, () => {}, { enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 });
   }
 
-  async function makeThumb(file) {
+  // Resize to MAX_EDGE and re-encode as JPEG. Falls back to the original file if the
+  // browser cannot decode it (e.g. HEIC outside Safari).
+  async function compress(file) {
     try {
       const bmp = await createImageBitmap(file);
-      const s = 240 / Math.min(bmp.width, bmp.height);
+      const scale = Math.min(1, MAX_EDGE / Math.max(bmp.width, bmp.height));
       const c = document.createElement('canvas');
-      c.width = Math.round(bmp.width * s); c.height = Math.round(bmp.height * s);
+      c.width = Math.round(bmp.width * scale); c.height = Math.round(bmp.height * scale);
       c.getContext('2d').drawImage(bmp, 0, 0, c.width, c.height);
+      const thumbC = document.createElement('canvas');
+      const ts = 240 / Math.min(c.width, c.height);
+      thumbC.width = Math.round(c.width * ts); thumbC.height = Math.round(c.height * ts);
+      thumbC.getContext('2d').drawImage(c, 0, 0, thumbC.width, thumbC.height);
       bmp.close?.();
-      return c.toDataURL('image/jpeg', 0.7);
-    } catch {
-      return 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><rect width="10" height="10" fill="#cfd8cf"/></svg>');
+      const blob = await new Promise((r) => c.toBlob(r, 'image/jpeg', JPEG_QUALITY));
+      return { blob, mime: 'image/jpeg', ext: 'jpg', thumb: thumbC.toDataURL('image/jpeg', 0.7) };
+    } catch (e) {
+      console.warn('compress failed, using original', e);
+      const ext = (file.name.split('.').pop() || 'jpg').toLowerCase();
+      return { blob: file, mime: file.type || 'image/jpeg', ext,
+        thumb: 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><rect width="10" height="10" fill="#cfd8cf"/></svg>') };
     }
   }
 
   const pad = (n) => String(n).padStart(2, '0');
-  function fileName(date, folderName, idx, ext) {
+  const clean = (s, n) => s.replace(/[\\/:*?"<>|]+/g, '').replace(/\s+/g, '-').slice(0, n);
+  function fileName(date, folderName, ext, id) {
     const d = `${date.getFullYear()}${pad(date.getMonth() + 1)}${pad(date.getDate())}_${pad(date.getHours())}${pad(date.getMinutes())}${pad(date.getSeconds())}`;
-    const safe = folderName.replace(/[\\/:*?"<>|]+/g, '').replace(/\s+/g, '-').slice(0, 40);
-    return `durian_${safe}_${d}${idx ? '_' + idx : ''}.${ext}`;
+    // Short id makes every name unique, which the backend uses to skip duplicate retries.
+    return `durian_${clean(folderName, 40)}_${d}_${clean(state.name, 20)}_${id.slice(0, 6)}.${ext}`;
   }
 
   $('saveBtn').onclick = async () => {
@@ -383,87 +368,85 @@
     closeSheet('reviewSheet');
 
     const now = new Date();
-    const descLines = [
+    const description = [
       note,
+      `Photographer: ${state.name}`,
       `Captured: ${now.toISOString()}`,
       pos ? `GPS: ${pos.lat.toFixed(6)}, ${pos.lng.toFixed(6)} (±${pos.acc} m)` : '',
       pos ? `Map: https://maps.google.com/?q=${pos.lat.toFixed(6)},${pos.lng.toFixed(6)}` : '',
       'Source: Durimage',
-    ].filter(Boolean);
+    ].filter(Boolean).join('\n');
 
     for (let i = 0; i < files.length; i++) {
-      const f = files[i];
-      const ext = (f.name.split('.').pop() || 'jpg').toLowerCase();
-      const id = crypto.randomUUID ? crypto.randomUUID() : String(Date.now() + Math.random());
+      const id = crypto.randomUUID ? crypto.randomUUID().replace(/-/g, '') : (Date.now().toString(36) + Math.random().toString(36).slice(2));
+      const c = await compress(files[i]);
       const item = {
         id, createdAt: Date.now() + i, status: 'queued',
         folderId: folder.id, folderName: folder.name,
-        name: fileName(now, folder.name, files.length > 1 ? i + 1 : 0, ext),
-        mime: f.type || 'image/jpeg',
-        description: descLines.join('\n'),
-        thumb: await makeThumb(f),
+        name: fileName(new Date(now.getTime() + i * 1000), folder.name, c.ext, id),
+        mime: c.mime, description, thumb: c.thumb,
       };
-      await putBlob(id, f);
+      await putBlob(id, c.blob);
       await putItem(item);
       state.items.push(item);
     }
     resetReview();
     render();
-    toast(t('savedQueued', { n: files.length }));
-    // The save tap is a user gesture, so we may open the Google popup here if needed.
-    if (navigator.onLine) { await ensureToken(true); processQueue(); }
+    toast(t(navigator.onLine ? 'savedQueued' : 'savedOffline', { n: files.length }));
+    processQueue();
   };
 
   // ---------- Upload queue ----------
-  async function uploadOne(item, token) {
+  const toBase64 = (blob) => new Promise((res, rej) => {
+    const r = new FileReader();
+    r.onload = () => res(String(r.result).split(',')[1]);
+    r.onerror = () => rej(r.error);
+    r.readAsDataURL(blob);
+  });
+
+  async function uploadOne(item) {
     const blob = await getBlob(item.id);
     if (!blob) throw new Error('missing blob');
-    if (DEMO) { await new Promise((r) => setTimeout(r, 900)); return { id: 'demo' }; }
-
-    // Resumable upload: works for any size (multipart is only for <=5 MB).
-    const init = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&supportsAllDrives=true', {
-      method: 'POST',
-      headers: {
-        Authorization: 'Bearer ' + token,
-        'Content-Type': 'application/json; charset=UTF-8',
-        'X-Upload-Content-Type': item.mime,
-        'X-Upload-Content-Length': String(blob.size),
-      },
-      body: JSON.stringify({ name: item.name, parents: [item.folderId], description: item.description, mimeType: item.mime }),
+    return api({
+      action: 'upload', key: state.password,
+      folderId: item.folderId, name: item.name, mimeType: item.mime,
+      description: item.description, data: await toBase64(blob),
     });
-    if (init.status === 401) throw Object.assign(new Error('auth'), { auth: true });
-    if (!init.ok) throw new Error('init ' + init.status + ' ' + (await init.text()));
-    const url = init.headers.get('Location');
-    const put = await fetch(url, { method: 'PUT', headers: { 'Content-Type': item.mime }, body: blob });
-    if (put.status === 401) throw Object.assign(new Error('auth'), { auth: true });
-    if (!put.ok) throw new Error('put ' + put.status);
-    return put.json();
   }
 
   async function processQueue() {
-    if (state.uploading || !navigator.onLine) return;
+    if (state.uploading || !navigator.onLine || !state.password) return;
     state.uploading = true;
     const doneByFolder = {};
+    let rejected = false;
     try {
-      const token = await ensureToken(false);
-      if (!token) return;
       for (const item of [...state.items].sort((a, b) => a.createdAt - b.createdAt)) {
-        if (item.status === 'done') continue;
+        if (item.status === 'done' || item.status === 'error') continue;
         if (!navigator.onLine) break;
         item.status = 'uploading'; render();
         try {
-          const res = await uploadOne(item, token);
-          item.status = 'done'; item.driveId = res.id; item.error = null;
-          await delBlob(item.id);
-          doneByFolder[item.folderName] = (doneByFolder[item.folderName] || 0) + 1;
+          const res = await uploadOne(item);
+          if (res.ok) {
+            item.status = 'done'; item.driveId = res.id; item.error = null;
+            await delBlob(item.id);
+            doneByFolder[item.folderName] = (doneByFolder[item.folderName] || 0) + 1;
+          } else if (res.error === 'bad_key') {
+            item.status = 'queued'; rejected = true;
+          } else if (res.error === 'bad_folder') {
+            item.status = 'error'; item.error = res.error; // folder removed/renamed by admin
+          } else {
+            item.status = 'error'; item.error = res.error || 'unknown';
+          }
         } catch (e) {
           console.error(e);
-          item.status = e.auth ? 'queued' : 'error';
+          item.status = 'queued'; // network problem: keep for the next attempt
           item.error = String(e.message || e);
-          if (e.auth) { state.token = null; store.del('token'); await putItem(item); break; }
+          await putItem(item);
+          break;
         }
         await putItem(item);
         render();
+        if (rejected) break;
       }
     } finally {
       state.uploading = false;
@@ -473,25 +456,29 @@
     else if (state.items.some((i) => i.status === 'error')) toast(t('uploadFail'), true);
     await trimHistory();
     render();
+    if (rejected) passwordRejected();
   }
 
   async function trimHistory() {
     const done = state.items.filter((i) => i.status === 'done').sort((a, b) => b.createdAt - a.createdAt);
-    for (const old of done.slice(120)) { await delItem(old.id); }
-    const keep = new Set(done.slice(120).map((i) => i.id));
-    state.items = state.items.filter((i) => !keep.has(i.id));
+    const drop = done.slice(120);
+    for (const old of drop) await delItem(old.id);
+    const ids = new Set(drop.map((i) => i.id));
+    state.items = state.items.filter((i) => !ids.has(i.id));
   }
 
   $('recentGrid').addEventListener('click', async (e) => {
     const tile = e.target.closest('.tile');
     if (!tile) return;
     const item = state.items.find((i) => i.id === tile.dataset.id);
-    if (!item) return;
-    if (item.status === 'error') {
+    if (item && item.status === 'error') {
+      // If the folder disappeared, send it to the currently selected folder instead.
+      if (item.error === 'bad_folder' && state.currentFolder) {
+        const f = state.folders.find((x) => x.id === state.currentFolder);
+        if (f) { item.folderId = f.id; item.folderName = f.name; }
+      }
       item.status = 'queued'; await putItem(item); render();
-      await ensureToken(true); processQueue();
-    } else if (item.status === 'done' && item.driveId && !DEMO) {
-      window.open('https://drive.google.com/file/d/' + item.driveId + '/view', '_blank');
+      processQueue();
     }
   });
 
@@ -502,6 +489,8 @@
     setLang(codes[(codes.indexOf(state.lang) + 1) % codes.length]);
   };
   $('gpsToggle').onchange = (e) => { state.gps = e.target.checked; store.set('gps', state.gps); };
+  $('editNameBtn').onclick = () => { closeSheet('settingsSheet'); showOnboard('editName'); };
+  $('reenterPwBtn').onclick = () => { closeSheet('settingsSheet'); showOnboard('reenter'); };
   $('clearHistoryBtn').onclick = async () => {
     for (const i of state.items.filter((x) => x.status === 'done')) await delItem(i.id);
     state.items = state.items.filter((x) => x.status !== 'done');
@@ -516,11 +505,10 @@
   (async () => {
     try {
       state.items = await allItems();
-      // Anything stuck "uploading" from a closed app goes back to the queue.
       for (const i of state.items) if (i.status === 'uploading') { i.status = 'queued'; await putItem(i); }
     } catch (e) { console.error(e); }
     applyI18n();
-    processQueue();
+    if (!needsOnboard()) { refreshFolders(false); processQueue(); }
     if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
   })();
 })();
