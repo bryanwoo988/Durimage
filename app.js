@@ -141,7 +141,7 @@
   // Step 1 (password) must succeed before step 2 (name); both before the camera.
   function showOnboard(mode) {
     state.onboardMode = mode;
-    document.body.classList.add('ob-mode'); window.scrollTo(0, 0);
+    document.body.classList.add('ob-mode'); document.documentElement.classList.add('ob-mode'); window.scrollTo(0, 0);
     setPwVisible(false);
     clearTimeout(toastTimer); $('toast').className = 'toast';
     const pwStep = mode === 'pw' || mode === 'reenter' || mode === 'pwChanged';
@@ -158,7 +158,7 @@
     // No auto-focus on first launch: the keyboard would cover the intro. Focus only when re-entering.
     if (mode !== 'pw') setTimeout(() => (pwStep ? $('pwInput') : $('nameInput')).focus(), 50);
   }
-  function hideOnboard() { $('onboard').hidden = true; state.onboardMode = null; document.body.classList.remove('ob-mode'); maybeShowWhatsNew(); }
+  function hideOnboard() { $('onboard').hidden = true; state.onboardMode = null; document.body.classList.remove('ob-mode'); document.documentElement.classList.remove('ob-mode'); maybeShowWhatsNew(); }
   function setPwVisible(on) {
     $('pwInput').type = on ? 'text' : 'password';
     $('pwEye').querySelector('use').setAttribute('href', on ? '#i-eye-off' : '#i-eye');
@@ -799,6 +799,11 @@
   window.addEventListener('online', () => { render(); processQueue(); });
   window.addEventListener('offline', render);
   document.addEventListener('visibilitychange', () => { if (!document.hidden) { processQueue(); checkForUpdate(false); maybeReload(); } });
+
+  // Keep --app-h equal to the real window height (rotation, iOS toolbars, keyboard closing).
+  const setAppHeight = () => document.documentElement.style.setProperty('--app-h', window.innerHeight + 'px');
+  window.addEventListener('resize', setAppHeight);
+  window.addEventListener('orientationchange', () => setTimeout(setAppHeight, 300));
 
   // ---------- Boot ----------
   (async () => {

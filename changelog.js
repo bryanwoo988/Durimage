@@ -2,6 +2,15 @@
 // When releasing: add a new entry at the TOP and set the same version in sw.js (VERSION).
 window.DURIMAGE_CHANGELOG = [
   {
+    version: '1.2.1',
+    date: '2026-11-04T15:05:00Z',
+    notes: {
+      zh: ['修正 iPhone 主屏幕 App 的登录页和首页比屏幕高、需要往下滑、底部出现一条黑边的问题'],
+      en: ['Fixed login and home screens being taller than the screen on the iPhone home-screen app (extra scrolling and a dark strip at the bottom)'],
+      ms: ['Membaiki skrin log masuk dan utama yang lebih tinggi daripada skrin pada aplikasi skrin utama iPhone (perlu skrol dan jalur gelap di bawah)'],
+    },
+  },
+  {
     version: '1.2.0',
     date: '2026-11-04T14:40:00Z',
     notes: {

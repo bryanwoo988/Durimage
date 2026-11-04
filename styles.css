@@ -86,7 +86,7 @@ button { font: inherit; color: inherit; border: 0; background: none; cursor: poi
 svg { width: 22px; height: 22px; flex: none; }
 [hidden] { display: none !important; }
 
-.app { max-width: 520px; margin: 0 auto; min-height: 100dvh; display: flex; flex-direction: column; }
+.app { max-width: 520px; margin: 0 auto; min-height: var(--app-h, 100dvh); display: flex; flex-direction: column; }
 
 /* Top bar */
 .topbar {
@@ -299,11 +299,11 @@ html[data-dark="1"] .segmented button.on { color: var(--ink); }
 
 /* Onboarding — hero + feature list on top, dark panel with the form at the bottom (thumb zone) */
 .onboard {
-  position: relative; z-index: 60; min-height: 100vh; min-height: 100dvh;
+  position: relative; z-index: 60; min-height: var(--app-h, 100dvh);
   background: var(--stars), radial-gradient(120% 70% at 50% 0%, #4a2f8f, var(--night-2) 45%, #120a2a 100%);
   color: #fff;
 }
-.onboard-inner { max-width: 520px; margin: 0 auto; min-height: 100dvh; display: flex; flex-direction: column; }
+.onboard-inner { max-width: 520px; margin: 0 auto; min-height: var(--app-h, 100dvh); display: flex; flex-direction: column; }
 .onboard-hero { flex: 1; display: flex; flex-direction: column; align-items: center; text-align: center; padding: calc(24px + var(--safe-t)) 24px 20px; }
 .onboard-logo { width: 84px; height: 84px; border-radius: 26px; box-shadow: 0 14px 34px rgba(0,0,0,.45), 0 0 0 1px rgba(255,255,255,.12); }
 .ob-welcome { margin-top: 16px; font-size: 21px; font-weight: 700; }
@@ -318,7 +318,7 @@ html[data-dark="1"] .segmented button.on { color: var(--ink); }
 .ob-ic svg { width: 22px; height: 22px; }
 
 .ob-panel {
-  background: rgba(255,255,255,.06); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+  background: #1e1638; /* solid, so it matches the page colour below it on iPhone */
   border-radius: 32px 32px 0 0; box-shadow: inset 0 1px 0 rgba(255,255,255,.08);
   padding: 20px 20px calc(10px + var(--safe-b));
   animation: up .35s cubic-bezier(.2,.8,.2,1);
@@ -431,7 +431,7 @@ html[data-dark="1"] .segmented button.on { color: var(--ink); }
 
 /* While onboarding is shown, it is the whole page (no fixed overlay: on iPhone home-screen apps
    a fixed overlay could stop short of the bottom edge). */
-body.ob-mode { background: #120a2a; }
+html.ob-mode, body.ob-mode { background: #1e1638; }
 body.ob-mode .app, body.ob-mode .dock { display: none; }
 
 /* Password show/hide */
@@ -463,3 +463,19 @@ body.ob-mode .app, body.ob-mode .dock { display: none; }
 .wn-date { font-size: 13px; color: var(--ink-2); margin-top: 4px; }
 #wnBody { margin: 10px 0 18px; }
 #wnBody .wn-ver { font-size: 13px; font-weight: 800; color: var(--ink-2); margin: 12px 0 0; }
+@media (max-height: 600px) {
+  .onboard-hero { padding: calc(10px + var(--safe-t)) 20px 10px; }
+  .onboard-logo { width: 48px; height: 48px; border-radius: 14px; }
+  .ob-welcome { margin-top: 6px; font-size: 15px; }
+  .ob-title { font-size: 28px; margin-bottom: 4px; }
+  .ob-sub { display: none; }
+  .ob-features { gap: 5px; }
+  .ob-features li { font-size: 13.5px; }
+  .ob-ic { width: 30px; height: 30px; border-radius: 9px; }
+  .ob-ic svg { width: 16px; height: 16px; }
+  .ob-panel { padding-top: 12px; }
+  .ob-step { margin-bottom: 8px; }
+  .ob-input, .ob-btn { height: 50px; }
+  .ob-help { margin-top: 6px; font-size: 13px; }
+  .form-err { min-height: 16px; padding: 2px 4px; }
+}

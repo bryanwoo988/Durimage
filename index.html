@@ -23,6 +23,9 @@
         var dark = mode === 'dark' || (mode === 'system' && matchMedia('(prefers-color-scheme: dark)').matches);
         document.documentElement.dataset.theme = dark ? g('darkTheme', 'midnight') : g('lightTheme', 'paper');
         document.documentElement.dataset.dark = dark ? '1' : '';
+        // Real window height: on iPhone home-screen apps 100vh/100dvh can be taller than the
+        // window (it includes the status bar), which made pages scroll and showed a band at the bottom.
+        document.documentElement.style.setProperty('--app-h', window.innerHeight + 'px');
       } catch (e) {}
     })();
   </script>
