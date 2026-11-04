@@ -155,7 +155,10 @@ function getLogSheet_(root, tz) {
   const props = PropertiesService.getScriptProperties();
   const id = props.getProperty('LOG_SHEET_ID');
   if (id) {
-    try { return SpreadsheetApp.openById(id).getSheets()[0]; } catch (e) { /* deleted → create a new one */ }
+    try {
+      // A Sheet moved to the Drive trash can still be opened by ID, so check for that too.
+      if (!DriveApp.getFileById(id).isTrashed()) return SpreadsheetApp.openById(id).getSheets()[0];
+    } catch (e) { /* permanently deleted → create a new one */ }
   }
   const ss = SpreadsheetApp.create('Durimage 照片记录');
   if (tz) { try { ss.setSpreadsheetTimeZone(tz); } catch (e) {} }
