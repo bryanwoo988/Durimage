@@ -512,3 +512,5 @@ body.ob-mode .app, body.ob-mode .dock { display: none; }
    bottom safe-area padding; bars and sheets sit on the window edge and the dock colour continues below. */
 html.vp-gap { --safe-b: 0px; }
 html.vp-gap .dock { padding-bottom: 10px; }
+/* Same idea for pop-up sheets: continue the sheet colour below the window edge. */
+.sheet-backdrop::after { content: ""; position: absolute; left: 0; right: 0; top: 100%; height: 160px; background: var(--surface); pointer-events: none; }
