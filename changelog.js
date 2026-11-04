@@ -2,6 +2,15 @@
 // When releasing: add a new entry at the TOP and set the same version in sw.js (VERSION).
 window.DURIMAGE_CHANGELOG = [
   {
+    version: '1.3.0',
+    date: '2026-11-04T15:45:00Z',
+    notes: {
+      zh: ['新增启动画面：打开 App 时显示 Durimage 的 icon，iPhone 不会再先出现一片白'],
+      en: ['New splash screen: the Durimage icon shows while the app opens, no more white screen on iPhone'],
+      ms: ['Skrin pembuka baharu: ikon Durimage dipaparkan semasa aplikasi dibuka, tiada lagi skrin putih pada iPhone'],
+    },
+  },
+  {
     version: '1.2.2',
     date: '2026-11-04T15:20:00Z',
     notes: {

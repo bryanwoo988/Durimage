@@ -483,3 +483,26 @@ body.ob-mode .app, body.ob-mode .dock { display: none; }
 /* iPhone home-screen app: if the window ends above the real screen bottom (WebKit viewport bug),
    continue the dock's colour downwards so no strip shows. Off-screen when there is no bug. */
 .dock::after { content: ""; position: absolute; left: 0; right: 0; top: 100%; height: 160px; background: inherit; pointer-events: none; }
+
+/* Splash (matches icons/splash/*.png exactly: icon + name centred at 42% height) */
+.splash {
+  position: fixed; inset: 0; z-index: 200; color: #fff; pointer-events: none;
+  background: var(--stars), radial-gradient(120% 70% at 50% 30%, #4a2f8f, #2e1a63 45%, #120a2a 100%);
+  transition: opacity .45s ease, visibility .45s;
+  animation: splashFailsafe .45s 5s forwards; /* never stuck if a script fails */
+}
+.splash.hide { opacity: 0; visibility: hidden; }
+@keyframes splashFailsafe { to { opacity: 0; visibility: hidden; } }
+.splash-c { position: absolute; left: 0; right: 0; top: 42%; transform: translateY(-50%); display: flex; flex-direction: column; align-items: center; }
+.splash-i { width: 120px; height: 120px; border-radius: 30px; box-shadow: 0 18px 44px rgba(0,0,0,.45), 0 0 0 1px rgba(255,255,255,.12); }
+.splash-t { margin-top: 26px; font-size: 38px; font-weight: 800; letter-spacing: -.5px; line-height: normal;
+  background: linear-gradient(180deg, #ffe08a, #f2b52c 70%, #e39a10); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.splash-sub { position: absolute; top: 100%; left: 0; right: 0; text-align: center; padding-top: 10px; animation: splashIn .5s .15s both; }
+.splash-tag { font-size: 15px; color: rgba(255,255,255,.7); min-height: 20px; }
+.splash-dots { display: flex; justify-content: center; gap: 7px; margin-top: 22px; }
+.splash-dots i { width: 7px; height: 7px; border-radius: 50%; background: #ffd35a; opacity: .3; animation: splashDot 1s infinite ease-in-out; }
+.splash-dots i:nth-child(2) { animation-delay: .15s; }
+.splash-dots i:nth-child(3) { animation-delay: .3s; }
+@keyframes splashDot { 40% { opacity: 1; transform: translateY(-4px); } }
+@keyframes splashIn { from { opacity: 0; transform: translateY(6px); } }
+@media (prefers-reduced-motion: reduce) { .splash-dots i, .splash-sub { animation: none; } }

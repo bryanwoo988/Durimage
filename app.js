@@ -817,6 +817,14 @@
   window.addEventListener('resize', setAppHeight);
   window.addEventListener('orientationchange', () => setTimeout(setAppHeight, 300));
 
+  // Splash: stays at least ~0.8 s after launch so it doesn't flash, then fades out.
+  function hideSplash() {
+    const el = $('splash'); if (!el) return;
+    $('splashTag').textContent = t('tagline');
+    const wait = Math.max(0, 800 - performance.now());
+    setTimeout(() => { el.classList.add('hide'); setTimeout(() => el.remove(), 600); }, wait);
+  }
+
   // ---------- Boot ----------
   (async () => {
     try {
@@ -830,5 +838,6 @@
     if (!needsOnboard()) { refreshFolders(false); processQueue(); }
     if (!state.onboardMode) maybeShowWhatsNew();
     setupServiceWorker();
+    hideSplash();
   })();
 })();

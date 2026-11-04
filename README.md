@@ -113,5 +113,6 @@ python3 -m http.server 8765
 | `config.js` | Apps Script 网址 |
 | `apps-script/Code.gs` | 后端：验证密码、列文件夹、开上传通道（原图）、备用压缩上传、写注解到 Sheet |
 | `icons/` | App icon（榴莲法师）与 header 用的 `mark.svg` |
+| `icons/splash/` | iPhone 启动画面（每种屏幕尺寸一张；Android 会用 manifest 自动生成） |
 | `vendor/qrcode.js` | QR code 产生器（MIT，Kazuhiko Arase） |
 | `sw.js` / `manifest.webmanifest` | PWA 离线缓存与安装 |
