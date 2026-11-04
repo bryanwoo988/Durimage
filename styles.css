@@ -24,21 +24,52 @@
   --safe-t: env(safe-area-inset-top, 0px);
   color-scheme: light;
 }
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #0d1610;
-    --surface: #152119;
-    --surface-2: #1b2a20;
-    --ink: #eef3ec;
-    --ink-2: #9fb2a3;
-    --line: #26372b;
-    --green-100: #1d3324;
-    --gold-100: #3a2e10;
-    --gold-ink: #f7cf6b;
-    --red-100: #3b1d12;
-    --shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 24px rgba(0,0,0,.35);
-    color-scheme: dark;
-  }
+/* Themes: paper is the :root default. app.js sets <html data-theme="..." data-dark="1|"> */
+html[data-theme="classic"] {
+  --bg: #f3f5f8; --surface: #ffffff; --surface-2: #f6f8fb; --ink: #172033; --ink-2: #5d6779; --line: #dfe4ec;
+  --green-600: #2f9e6a; --green-800: #1d6b47; --green-900: #124a31; --green-100: #e3f3ea;
+  --shadow: 0 1px 2px rgba(20, 30, 50, .06), 0 8px 24px rgba(20, 30, 50, .08);
+  color-scheme: light;
+}
+html[data-theme="mint"] {
+  --bg: #eef6f2; --surface: #ffffff; --surface-2: #f3f9f6; --ink: #13291f; --ink-2: #53695e; --line: #d6e7de;
+  --green-600: #2b7a64; --green-800: #1b5a49; --green-900: #0f3d31; --green-100: #dcefe7;
+  --shadow: 0 1px 2px rgba(20, 30, 50, .06), 0 8px 24px rgba(20, 30, 50, .08);
+  color-scheme: light;
+}
+html[data-theme="lavender"] {
+  --bg: #f3f1fb; --surface: #ffffff; --surface-2: #f7f5fd; --ink: #1f1a33; --ink-2: #625c78; --line: #e2ddf2;
+  --green-600: #5b3aa6; --green-800: #432a86; --green-900: #2e1a63; --green-100: #ebe5f8;
+  --shadow: 0 1px 2px rgba(20, 30, 50, .06), 0 8px 24px rgba(20, 30, 50, .08);
+  color-scheme: light;
+}
+html[data-theme="midnight"] {
+  --bg: #0b1220; --surface: #131c2e; --surface-2: #1a2438; --ink: #e8edf6; --ink-2: #9aa6bb; --line: #243049;
+  --green-600: #3fae7a; --green-800: #2e8a5e; --green-900: #1b5a3d; --green-100: #17322a;
+  --gold-100: #3a2e10; --gold-ink: #f7cf6b; --red-100: #3b1d12;
+  --shadow: 0 1px 2px rgba(0,0,0,.35), 0 8px 24px rgba(0,0,0,.4);
+  color-scheme: dark;
+}
+html[data-theme="oled"] {
+  --bg: #000000; --surface: #0e0e0e; --surface-2: #171717; --ink: #f2f2f2; --ink-2: #9a9a9a; --line: #242424;
+  --green-600: #3fae7a; --green-800: #2e8a5e; --green-900: #1b5a3d; --green-100: #10261c;
+  --gold-100: #3a2e10; --gold-ink: #f7cf6b; --red-100: #3b1d12;
+  --shadow: 0 1px 2px rgba(0,0,0,.35), 0 8px 24px rgba(0,0,0,.4);
+  color-scheme: dark;
+}
+html[data-theme="slate"] {
+  --bg: #1c2027; --surface: #262b34; --surface-2: #2e3440; --ink: #e9ecf1; --ink-2: #a0a8b6; --line: #373e4a;
+  --green-600: #5b93d6; --green-800: #3f76b8; --green-900: #2a5487; --green-100: #24344a;
+  --gold-100: #3a2e10; --gold-ink: #f7cf6b; --red-100: #3b1d12;
+  --shadow: 0 1px 2px rgba(0,0,0,.35), 0 8px 24px rgba(0,0,0,.4);
+  color-scheme: dark;
+}
+html[data-theme="grape"] {
+  --bg: #120d1e; --surface: #1c1530; --surface-2: #241c3c; --ink: #efeaf9; --ink-2: #a99fc4; --line: #30264f;
+  --green-600: #9b7be6; --green-800: #7a59cf; --green-900: #4f3596; --green-100: #2a2148;
+  --gold-100: #3a2e10; --gold-ink: #f7cf6b; --red-100: #3b1d12;
+  --shadow: 0 1px 2px rgba(0,0,0,.35), 0 8px 24px rgba(0,0,0,.4);
+  color-scheme: dark;
 }
 
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
@@ -86,7 +117,7 @@ svg { width: 22px; height: 22px; flex: none; }
 .lang-pill span { display: inline-block; animation: pop .25s ease-out; }
 @keyframes pop { from { transform: translateY(6px); opacity: 0; } }
 
-.content { flex: 1; padding: 16px 16px calc(130px + var(--safe-b)); display: flex; flex-direction: column; gap: 14px; }
+.content { flex: 1; padding: 16px 16px calc(160px + var(--safe-b)); display: flex; flex-direction: column; gap: 14px; }
 
 /* Banners */
 .banner {
@@ -242,10 +273,10 @@ svg { width: 22px; height: 22px; flex: none; }
 .set-row .set-label { margin-bottom: 2px; }
 .set-title { font-weight: 600; word-break: break-all; }
 .set-desc { font-size: 13px; color: var(--ink-2); }
-.segmented { display: grid; grid-template-columns: repeat(3, 1fr); background: var(--surface-2); border-radius: 12px; padding: 4px; gap: 4px; }
+.segmented { display: grid; grid-template-columns: repeat(3, 1fr); background: var(--surface-2); border: 1px solid var(--line); border-radius: 14px; padding: 4px; gap: 4px; }
 .segmented button { height: 40px; border-radius: 9px; font-weight: 700; font-size: 14.5px; color: var(--ink-2); }
-.segmented button.on { background: var(--surface); color: var(--green-800); box-shadow: 0 1px 4px rgba(0,0,0,.12); }
-@media (prefers-color-scheme: dark) { .segmented button.on { color: #9bd17a; } }
+.segmented button.on { background: var(--surface); color: var(--ink); box-shadow: 0 1px 4px rgba(0,0,0,.12); }
+html[data-dark="1"] .segmented button.on { color: var(--ink); }
 .switch { position: relative; width: 52px; height: 32px; flex: none; }
 .switch input { opacity: 0; width: 0; height: 0; }
 .switch span { position: absolute; inset: 0; border-radius: 999px; background: var(--line); transition: .2s; }
@@ -349,3 +380,14 @@ svg { width: 22px; height: 22px; flex: none; }
 .share-actions.single { grid-template-columns: 1fr; }
 .share-row { margin-top: 14px; }
 .set-row .btn svg { width: 18px; height: 18px; }
+
+/* Appearance picker */
+.appear-desc { margin: 10px 2px 4px; line-height: 1.45; }
+.set-sub { font-size: 14px; font-weight: 700; color: var(--ink-2); margin: 16px 2px 10px; }
+.swatches { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.swatch { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 6px 4px 8px; border-radius: 18px; border: 2px solid transparent; font-size: 13px; font-weight: 600; color: var(--ink); line-height: 1.2; text-align: center; }
+.swatch.on { border-color: var(--green-600); }
+.swatch-prev { width: 100%; aspect-ratio: 1.15; border-radius: 14px; border: 1.5px solid; position: relative; overflow: hidden; }
+.swatch-prev i { position: absolute; inset: 15% 14%; border-radius: 9px; }
+.swatch-prev b { position: absolute; left: 24%; top: 28%; width: 26%; height: 9%; border-radius: 99px; }
+.swatch-prev u { position: absolute; left: 24%; top: 46%; width: 42%; height: 7%; border-radius: 99px; background: rgba(128,128,128,.35); }

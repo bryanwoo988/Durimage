@@ -1,5 +1,11 @@
 window.I18N = {
   zh: {
+    appearance: '外观',
+    modeSystem: '跟随系统', modeLight: '浅色', modeDark: '深色',
+    appearanceDesc: '「跟随系统」会跟着手机设定：手机是浅色就用你选的浅色主题，手机是深色就用你选的深色主题。',
+    lightTheme: '浅色主题', darkTheme: '深色主题',
+    th_classic: '经典', th_paper: '纸张', th_mint: '薄荷', th_lavender: '薰衣草',
+    th_midnight: '午夜', th_oled: 'OLED 纯黑', th_slate: '石板', th_grape: '葡萄',
     welcomeTo: '欢迎使用',
     featuresIntro: '输入团队密码就可以：',
     feat1: '拍照后自动存进团队的 Google Drive',
@@ -82,6 +88,12 @@ window.I18N = {
     saved: '已保存',
   },
   en: {
+    appearance: 'Appearance',
+    modeSystem: 'Match system', modeLight: 'Light', modeDark: 'Dark',
+    appearanceDesc: 'In Match system mode the app follows your phone: your light theme when the phone is light, your dark theme when it is dark.',
+    lightTheme: 'Light theme', darkTheme: 'Dark theme',
+    th_classic: 'Classic', th_paper: 'Paper', th_mint: 'Mint', th_lavender: 'Lavender',
+    th_midnight: 'Midnight', th_oled: 'OLED Black', th_slate: 'Slate', th_grape: 'Grape',
     welcomeTo: 'Welcome to',
     featuresIntro: 'Enter the team password to:',
     feat1: 'Send photos straight to the team Google Drive',
@@ -164,6 +176,12 @@ window.I18N = {
     saved: 'Saved',
   },
   ms: {
+    appearance: 'Paparan',
+    modeSystem: 'Ikut sistem', modeLight: 'Cerah', modeDark: 'Gelap',
+    appearanceDesc: 'Dalam mod Ikut sistem, aplikasi mengikut telefon: tema cerah anda bila telefon cerah, tema gelap anda bila telefon gelap.',
+    lightTheme: 'Tema cerah', darkTheme: 'Tema gelap',
+    th_classic: 'Klasik', th_paper: 'Kertas', th_mint: 'Pudina', th_lavender: 'Lavender',
+    th_midnight: 'Tengah Malam', th_oled: 'Hitam OLED', th_slate: 'Batu Loh', th_grape: 'Anggur',
     welcomeTo: 'Selamat datang ke',
     featuresIntro: 'Masukkan kata laluan pasukan untuk:',
     feat1: 'Hantar foto terus ke Google Drive pasukan',

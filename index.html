@@ -14,6 +14,18 @@
   <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
   <link rel="stylesheet" href="styles.css">
+  <script>
+    // Apply the saved theme before first paint (no light flash in dark mode).
+    (function () {
+      try {
+        var g = function (k, d) { var v = localStorage.getItem('dm_' + k); return v ? JSON.parse(v) : d; };
+        var mode = g('appearance', 'system');
+        var dark = mode === 'dark' || (mode === 'system' && matchMedia('(prefers-color-scheme: dark)').matches);
+        document.documentElement.dataset.theme = dark ? g('darkTheme', 'midnight') : g('lightTheme', 'paper');
+        document.documentElement.dataset.dark = dark ? '1' : '';
+      } catch (e) {}
+    })();
+  </script>
 </head>
 <body>
   <!-- Icon sprite -->
@@ -50,8 +62,6 @@
         </div>
       </div>
       <div class="top-actions">
-        <button class="lang-pill" id="langBtn" aria-label="Language"><svg><use href="#i-globe"/></svg><span id="langLabel"></span></button>
-        <button class="icon-btn" id="shareBtn" aria-label="Share"><svg><use href="#i-qr"/></svg></button>
         <button class="icon-btn" id="settingsBtn" aria-label="Settings"><svg><use href="#i-gear"/></svg></button>
       </div>
     </header>
@@ -154,6 +164,15 @@
         </div>
         <button class="btn btn-small btn-outline" id="langCycleBtn"><svg><use href="#i-globe"/></svg><span data-i18n="switchLang"></span></button>
       </div>
+      <div class="set-group">
+        <div class="set-label" data-i18n="appearance"></div>
+        <div class="segmented" id="modeSeg"></div>
+        <p class="set-desc appear-desc" data-i18n="appearanceDesc"></p>
+        <div class="set-sub" data-i18n="lightTheme"></div>
+        <div class="swatches" id="lightSwatches"></div>
+        <div class="set-sub" data-i18n="darkTheme"></div>
+        <div class="swatches" id="darkSwatches"></div>
+      </div>
       <div class="set-group set-row">
         <div>
           <div class="set-title" data-i18n="gps"></div>
@@ -177,7 +196,7 @@
       </div>
       <button class="btn btn-outline btn-block share-row" id="shareRowBtn"><svg><use href="#i-qr"/></svg><span data-i18n="shareApp"></span></button>
       <button class="btn btn-ghost btn-block" id="clearHistoryBtn" data-i18n="clearHistory"></button>
-      <div class="version">Durimage v1.1</div>
+      <div class="version">Durimage v1.2</div>
     </div>
   </div>
 

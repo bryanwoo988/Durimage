@@ -32,6 +32,9 @@
     folders: store.get('folders', []),
     currentFolder: store.get('currentFolder', null),
     gps: store.get('gps', true),
+    appearance: store.get('appearance', 'system'), // 'system' | 'light' | 'dark'
+    lightTheme: store.get('lightTheme', 'paper'),
+    darkTheme: store.get('darkTheme', 'midnight'),
     items: [],
     pending: [],
     reviewFolder: null,
@@ -51,7 +54,6 @@
     document.querySelectorAll('[data-i18n]').forEach((el) => { el.textContent = t(el.dataset.i18n); });
     document.querySelectorAll('[data-i18n-ph]').forEach((el) => { el.placeholder = t(el.dataset.i18nPh); });
     // One button cycles 华文 → EN → BM → 华文
-    $('langLabel').textContent = I18N[state.lang]._label;
     const codes = Object.keys(I18N);
     $('onboardLangLabel').textContent = I18N[codes[(codes.indexOf(state.lang) + 1) % codes.length]]._name; // shows the language you'd switch TO
     $('langName').textContent = I18N[state.lang]._name;
@@ -222,6 +224,7 @@
 
     $('gpsToggle').checked = state.gps;
     $('nameValue').textContent = state.name || '—';
+    renderAppearance();
     renderFolderList();
   }
 
@@ -529,9 +532,49 @@
     }
   });
 
+  // ---------- Appearance: 4 light + 4 dark themes ----------
+  // Swatch colours mirror the CSS variables in styles.css: [background, card, accent]
+  const THEMES = {
+    light: { classic: ['#f3f5f8', '#ffffff', '#2f9e6a'], paper: ['#f4f1e8', '#ffffff', '#1f7a43'],
+             mint: ['#eef6f2', '#ffffff', '#2b7a64'], lavender: ['#f3f1fb', '#ffffff', '#5b3aa6'] },
+    dark:  { midnight: ['#0b1220', '#131c2e', '#3fae7a'], oled: ['#000000', '#0e0e0e', '#3fae7a'],
+             slate: ['#1c2027', '#262b34', '#5b93d6'], grape: ['#120d1e', '#1c1530', '#9b7be6'] },
+  };
+  const darkMql = window.matchMedia ? matchMedia('(prefers-color-scheme: dark)') : null;
+  function applyTheme() {
+    const dark = state.appearance === 'dark' || (state.appearance === 'system' && !!darkMql && darkMql.matches);
+    document.documentElement.dataset.theme = dark ? state.darkTheme : state.lightTheme;
+    document.documentElement.dataset.dark = dark ? '1' : '';
+  }
+  darkMql && darkMql.addEventListener && darkMql.addEventListener('change', () => { if (state.appearance === 'system') applyTheme(); });
+  function renderAppearance() {
+    $('modeSeg').innerHTML = ['system', 'light', 'dark'].map((m) =>
+      `<button type="button" data-mode="${m}" class="${state.appearance === m ? 'on' : ''}">${esc(t('mode' + m[0].toUpperCase() + m.slice(1)))}</button>`).join('');
+    for (const kind of ['light', 'dark']) {
+      const chosen = kind === 'light' ? state.lightTheme : state.darkTheme;
+      $(kind + 'Swatches').innerHTML = Object.entries(THEMES[kind]).map(([id, [bg, card, accent]]) =>
+        `<button type="button" class="swatch ${id === chosen ? 'on' : ''}" data-kind="${kind}" data-theme="${id}">
+          <span class="swatch-prev" style="background:${bg};border-color:${kind === 'dark' ? '#333' : '#dcdcdc'}">
+            <i style="background:${card}"></i><b style="background:${accent}"></b><u></u>
+          </span>${esc(t('th_' + id))}</button>`).join('');
+    }
+  }
+  $('modeSeg').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-mode]'); if (!b) return;
+    state.appearance = b.dataset.mode; store.set('appearance', state.appearance);
+    applyTheme(); renderAppearance();
+  });
+  ['lightSwatches', 'darkSwatches'].forEach((id) => $(id).addEventListener('click', (e) => {
+    const b = e.target.closest('.swatch'); if (!b) return;
+    if (b.dataset.kind === 'light') { state.lightTheme = b.dataset.theme; store.set('lightTheme', state.lightTheme); }
+    else { state.darkTheme = b.dataset.theme; store.set('darkTheme', state.darkTheme); }
+    // Picking a theme of the other kind than what is showing switches to it, so you see the result.
+    if (state.appearance !== 'system') { state.appearance = b.dataset.kind; store.set('appearance', state.appearance); }
+    applyTheme(); renderAppearance();
+  }));
+
   // ---------- Settings ----------
   $('settingsBtn').onclick = () => openSheet('settingsSheet');
-  $('langBtn').onclick = cycleLang;
   $('onboardLangBtn').onclick = cycleLang;
   $('langCycleBtn').onclick = cycleLang;
 
@@ -549,7 +592,6 @@
     closeSheet('settingsSheet');
     openSheet('shareSheet');
   }
-  $('shareBtn').onclick = openShare;
   $('shareRowBtn').onclick = openShare;
   $('copyLinkBtn').onclick = async () => {
     try { await navigator.clipboard.writeText(shareUrl()); toast(t('linkCopied')); }
@@ -577,6 +619,7 @@
       state.items = await allItems();
       for (const i of state.items) if (i.status === 'uploading') { i.status = 'queued'; await putItem(i); }
     } catch (e) { console.error(e); }
+    applyTheme();
     applyI18n();
     if (!needsOnboard()) { refreshFolders(false); processQueue(); }
     if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
