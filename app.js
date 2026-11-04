@@ -550,6 +550,7 @@
   function renderAppearance() {
     $('modeSeg').innerHTML = ['system', 'light', 'dark'].map((m) =>
       `<button type="button" data-mode="${m}" class="${state.appearance === m ? 'on' : ''}">${esc(t('mode' + m[0].toUpperCase() + m.slice(1)))}</button>`).join('');
+    $('appearValue').textContent = appearSummary();
     for (const kind of ['light', 'dark']) {
       const chosen = kind === 'light' ? state.lightTheme : state.darkTheme;
       $(kind + 'Swatches').innerHTML = Object.entries(THEMES[kind]).map(([id, [bg, card, accent]]) =>
@@ -559,6 +560,11 @@
           </span>${esc(t('th_' + id))}</button>`).join('');
     }
   }
+  function appearSummary() {
+    const mode = t('mode' + state.appearance[0].toUpperCase() + state.appearance.slice(1));
+    return `${mode} · ${t('th_' + state.lightTheme)} / ${t('th_' + state.darkTheme)}`;
+  }
+  $('appearRowBtn').onclick = () => { closeSheet('settingsSheet'); openSheet('appearSheet'); };
   $('modeSeg').addEventListener('click', (e) => {
     const b = e.target.closest('[data-mode]'); if (!b) return;
     state.appearance = b.dataset.mode; store.set('appearance', state.appearance);

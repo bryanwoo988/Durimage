@@ -164,15 +164,13 @@
         </div>
         <button class="btn btn-small btn-outline" id="langCycleBtn"><svg><use href="#i-globe"/></svg><span data-i18n="switchLang"></span></button>
       </div>
-      <div class="set-group">
-        <div class="set-label" data-i18n="appearance"></div>
-        <div class="segmented" id="modeSeg"></div>
-        <p class="set-desc appear-desc" data-i18n="appearanceDesc"></p>
-        <div class="set-sub" data-i18n="lightTheme"></div>
-        <div class="swatches" id="lightSwatches"></div>
-        <div class="set-sub" data-i18n="darkTheme"></div>
-        <div class="swatches" id="darkSwatches"></div>
-      </div>
+      <button class="set-group set-row set-link" id="appearRowBtn">
+        <div>
+          <div class="set-label" data-i18n="appearance"></div>
+          <div class="set-title" id="appearValue"></div>
+        </div>
+        <svg class="chev"><use href="#i-chev"/></svg>
+      </button>
       <div class="set-group set-row">
         <div>
           <div class="set-title" data-i18n="gps"></div>
@@ -197,6 +195,23 @@
       <button class="btn btn-outline btn-block share-row" id="shareRowBtn"><svg><use href="#i-qr"/></svg><span data-i18n="shareApp"></span></button>
       <button class="btn btn-ghost btn-block" id="clearHistoryBtn" data-i18n="clearHistory"></button>
       <div class="version">Durimage v1.2</div>
+    </div>
+  </div>
+
+  <!-- Appearance sheet -->
+  <div class="sheet-backdrop" id="appearSheet" hidden>
+    <div class="sheet appear-sheet" role="dialog" aria-modal="true">
+      <div class="sheet-grip"></div>
+      <div class="sheet-head">
+        <h2 class="appear-title" data-i18n="appearance"></h2>
+        <button class="icon-btn" data-close aria-label="Close"><svg><use href="#i-x"/></svg></button>
+      </div>
+      <div class="segmented appear-seg" id="modeSeg"></div>
+      <p class="appear-desc" data-i18n="appearanceDesc"></p>
+      <h3 class="appear-sub" data-i18n="lightTheme"></h3>
+      <div class="swatches" id="lightSwatches"></div>
+      <h3 class="appear-sub" data-i18n="darkTheme"></h3>
+      <div class="swatches" id="darkSwatches"></div>
     </div>
   </div>
 
