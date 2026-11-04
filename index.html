@@ -36,6 +36,7 @@
     <symbol id="i-share" viewBox="0 0 24 24"><path d="M12 15V3.5m0 0L8 7.5m4-4 4 4M6 11H5.5A1.5 1.5 0 0 0 4 12.5v6A1.5 1.5 0 0 0 5.5 20h13a1.5 1.5 0 0 0 1.5-1.5v-6a1.5 1.5 0 0 0-1.5-1.5H18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
     <symbol id="i-copy" viewBox="0 0 24 24"><rect x="8.5" y="8.5" width="11" height="11" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M15.5 8.5V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v7.5a2 2 0 0 0 2 2h2.5" fill="none" stroke="currentColor" stroke-width="1.8"/></symbol>
     <symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M3.5 12h17M12 3.5c2.6 2.6 3.8 5.4 3.8 8.5s-1.2 5.9-3.8 8.5c-2.6-2.6-3.8-5.4-3.8-8.5S9.4 6.1 12 3.5z" fill="none" stroke="currentColor" stroke-width="1.6"/></symbol>
+    <symbol id="i-note" viewBox="0 0 24 24"><path d="M6.5 3.5h7.6l4.4 4.4v10.6a2 2 0 0 1-2 2h-10a2 2 0 0 1-2-2v-13a2 2 0 0 1 2-2z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M14 3.7V8h4.3M8 12.5h8M8 16h5.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></symbol>
     <symbol id="i-logo" viewBox="0 0 64 64"><g fill="currentColor"><path d="M32 4l4 7 7-4 1 8 8-1-2 8 7 3-5 6 5 6-7 3 2 8-8-1-1 8-7-4-4 7-4-7-7 4-1-8-8 1 2-8-7-3 5-6-5-6 7-3-2-8 8 1 1-8 7 4z"/></g><ellipse cx="32" cy="34" rx="11" ry="12" fill="#fbbf24"/><path d="M32 22c-1-4 1-8 5-10" stroke="#fbbf24" stroke-width="3" fill="none" stroke-linecap="round"/></symbol>
   </svg>
 
@@ -113,7 +114,8 @@
       <div class="folder-chips" id="reviewFolders"></div>
       <label class="field">
         <span data-i18n="note"></span>
-        <textarea id="noteInput" rows="2" data-i18n-ph="notePh"></textarea>
+        <textarea id="noteInput" rows="3" data-i18n-ph="notePh"></textarea>
+        <small class="field-hint"><svg><use href="#i-note"/></svg><span data-i18n="noteHint"></span></small>
       </label>
       <div class="gps-line" id="gpsLine" hidden><svg><use href="#i-pin"/></svg><span id="gpsText"></span></div>
       <div class="sheet-foot">
@@ -201,35 +203,41 @@
     </div>
   </div>
 
-  <!-- Onboarding: step 1 team password, step 2 name -->
+  <!-- Onboarding: step 1 team password, step 2 name. Form sits at the bottom (thumb zone). -->
   <div class="onboard" id="onboard" hidden>
     <div class="onboard-inner">
-      <div class="onboard-top">
-        <button class="lang-pill" id="onboardLangBtn" type="button" aria-label="Language"><svg><use href="#i-globe"/></svg><span id="onboardLangLabel"></span></button>
-      </div>
       <div class="onboard-hero">
         <img class="onboard-logo" src="icons/icon.svg" alt="">
-        <h1 data-i18n="welcome"></h1>
-        <p data-i18n="welcomeDesc"></p>
+        <div class="ob-welcome" data-i18n="welcomeTo"></div>
+        <h1 class="ob-title">Durimage</h1>
+        <p class="ob-sub" data-i18n="featuresIntro"></p>
+        <ul class="ob-features">
+          <li><span class="ob-ic"><svg><use href="#i-camera"/></svg></span><span data-i18n="feat1"></span></li>
+          <li><span class="ob-ic"><svg><use href="#i-folder"/></svg></span><span data-i18n="feat2"></span></li>
+          <li><span class="ob-ic"><svg><use href="#i-note"/></svg></span><span data-i18n="feat3"></span></li>
+          <li><span class="ob-ic"><svg><use href="#i-offline"/></svg></span><span data-i18n="feat4"></span></li>
+        </ul>
       </div>
-      <form class="onboard-card" id="pwForm" novalidate>
-        <div class="onboard-step" id="pwStep"></div>
-        <h2 data-i18n="pwTitle"></h2>
-        <p data-i18n="pwDesc"></p>
-        <div class="onboard-notice" id="pwNotice" hidden data-i18n="pwChanged"></div>
-        <input class="input" id="pwInput" type="password" autocomplete="current-password" data-i18n-ph="pwPh">
-        <div class="form-err" id="pwErr"></div>
-        <button class="btn btn-primary btn-block" id="pwSubmit" type="submit" data-i18n="next"></button>
-        <button class="btn btn-ghost btn-block" id="pwCancel" type="button" data-i18n="cancel" hidden></button>
-      </form>
-      <form class="onboard-card" id="nameForm" novalidate hidden>
-        <div class="onboard-step" id="nameStep"></div>
-        <h2 data-i18n="nameTitle"></h2>
-        <p data-i18n="nameDesc"></p>
-        <input class="input" id="nameInput" type="text" autocomplete="name" maxlength="40" data-i18n-ph="namePh">
-        <button class="btn btn-primary btn-block" id="nameSubmit" type="submit" data-i18n="start"></button>
-        <button class="btn btn-ghost btn-block" id="nameCancel" type="button" data-i18n="cancel" hidden></button>
-      </form>
+      <div class="ob-panel">
+        <form id="pwForm" novalidate>
+          <div class="ob-step" id="pwStep"></div>
+          <div class="onboard-notice" id="pwNotice" hidden data-i18n="pwChanged"></div>
+          <input class="ob-input" id="pwInput" type="password" autocomplete="current-password" data-i18n-ph="pwPh">
+          <div class="ob-help" data-i18n="pwDesc"></div>
+          <div class="form-err" id="pwErr"></div>
+          <button class="ob-btn" id="pwSubmit" type="submit" data-i18n="next"></button>
+          <button class="ob-ghost" id="pwCancel" type="button" data-i18n="cancel" hidden></button>
+        </form>
+        <form id="nameForm" novalidate hidden>
+          <div class="ob-step" id="nameStep"></div>
+          <input class="ob-input" id="nameInput" type="text" autocomplete="name" maxlength="40" data-i18n-ph="namePh">
+          <div class="ob-help" data-i18n="nameDesc"></div>
+          <div class="form-err"></div>
+          <button class="ob-btn" id="nameSubmit" type="submit" data-i18n="start"></button>
+          <button class="ob-ghost" id="nameCancel" type="button" data-i18n="cancel" hidden></button>
+        </form>
+        <button class="ob-lang" id="onboardLangBtn" type="button"><span data-i18n="switchLangQ"></span> <b id="onboardLangLabel"></b></button>
+      </div>
     </div>
   </div>
 

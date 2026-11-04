@@ -52,10 +52,11 @@
     document.querySelectorAll('[data-i18n-ph]').forEach((el) => { el.placeholder = t(el.dataset.i18nPh); });
     // One button cycles 华文 → EN → BM → 华文
     $('langLabel').textContent = I18N[state.lang]._label;
-    $('onboardLangLabel').textContent = I18N[state.lang]._label;
+    const codes = Object.keys(I18N);
+    $('onboardLangLabel').textContent = I18N[codes[(codes.indexOf(state.lang) + 1) % codes.length]]._name; // shows the language you'd switch TO
     $('langName').textContent = I18N[state.lang]._name;
-    $('pwStep').textContent = t('step', { n: 1 });
-    $('nameStep').textContent = t('step', { n: 2 });
+    $('pwStep').textContent = t('step', { n: 1 }) + ' · ' + t('pwTitle');
+    $('nameStep').textContent = t('step', { n: 2 }) + ' · ' + t('nameTitle');
     render();
   }
   function setLang(code) { state.lang = code; store.set('lang', code); applyI18n(); }
@@ -149,7 +150,8 @@
     $('pwInput').value = '';
     $('pwInput').classList.remove('bad');
     $('nameInput').value = state.name || '';
-    setTimeout(() => (pwStep ? $('pwInput') : $('nameInput')).focus(), 50);
+    // No auto-focus on first launch: the keyboard would cover the intro. Focus only when re-entering.
+    if (mode !== 'pw') setTimeout(() => (pwStep ? $('pwInput') : $('nameInput')).focus(), 50);
   }
   function hideOnboard() { $('onboard').hidden = true; state.onboardMode = null; }
   function needsOnboard() {
@@ -213,6 +215,7 @@
       return `<button class="tile" data-id="${esc(i.id)}">
         <img src="${i.thumb}" alt="" loading="lazy">
         <div class="tile-folder">${esc(i.folderName)}</div>
+        ${i.note ? '<div class="tile-note"><svg><use href="#i-note"/></svg></div>' : ''}
         <div class="tile-badge b-${i.status}">${icon}<span>${t(i.status === 'error' ? 'retry' : i.status)}</span></div>
       </button>`;
     }).join('');
@@ -377,7 +380,7 @@
         id, createdAt: Date.now() + i, status: 'queued',
         folderId: folder.id, folderName: folder.name,
         name: fileName(new Date(now.getTime() + i * 1000), folder.name, ext, id),
-        mime: f.type || 'image/jpeg', size: f.size, description, thumb: await makeThumb(f),
+        mime: f.type || 'image/jpeg', size: f.size, description, note, thumb: await makeThumb(f),
       };
       await putBlob(id, f); // the untouched original
       await putItem(item);
@@ -432,6 +435,17 @@
     }
   }
 
+  // "durian_X_..._ab12cd.jpg" → "durian_X_..._ab12cd.txt", so the note sorts right next to its photo.
+  const noteName = (item) => item.name.replace(/\.[^.]+$/, '') + '.txt';
+  const noteText = (item) => [
+    item.note,
+    '',
+    '----',
+    `Photo: ${item.name}`,
+    `Folder: ${item.folderName}`,
+    ...item.description.split('\n').filter((l) => l !== item.note && l !== 'Source: Durimage'),
+  ].join('\n');
+
   async function processQueue() {
     if (state.uploading || !navigator.onLine || !state.password) return;
     state.uploading = true;
@@ -443,10 +457,18 @@
         if (!navigator.onLine) break;
         item.status = 'uploading'; render();
         try {
-          const res = await uploadOne(item);
+          // Photo first (skipped if an earlier attempt already got it into Drive), then the .txt note.
+          let res = { ok: true, id: item.driveId };
+          if (!item.driveId) {
+            res = await uploadOne(item);
+            if (res.ok) { item.driveId = res.id; await putItem(item); await delBlob(item.id); }
+          }
+          if (res.ok && item.note && !item.noteSaved) {
+            res = await api({ action: 'note', key: state.password, folderId: item.folderId, name: noteName(item), text: noteText(item) });
+            if (res.ok) item.noteSaved = true;
+          }
           if (res.ok) {
-            item.status = 'done'; item.driveId = res.id; item.error = null;
-            await delBlob(item.id);
+            item.status = 'done'; item.error = null;
             doneByFolder[item.folderName] = (doneByFolder[item.folderName] || 0) + 1;
           } else if (res.error === 'bad_key') {
             item.status = 'queued'; rejected = true;

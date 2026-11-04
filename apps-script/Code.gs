@@ -69,6 +69,20 @@ function doPost(e) {
       return json({ ok: true, uploadUrl: uploadUrl });
     }
 
+    // Note for a photo, saved as a .txt file with the same name next to it.
+    if (req.action === 'note') {
+      const allowed = listFolders(root).some(function (f) { return f.id === req.folderId; });
+      if (!allowed) return json({ ok: false, error: 'bad_folder' });
+      const name = String(req.name || '').slice(0, 200);
+      if (!/\.txt$/i.test(name)) return json({ ok: false, error: 'bad_name' });
+      const folder = DriveApp.getFolderById(req.folderId);
+      const existing = folder.getFilesByName(name);
+      if (existing.hasNext()) return json({ ok: true, id: existing.next().getId(), duplicate: true });
+      // BOM so older Windows Notepad also shows Chinese correctly.
+      const file = folder.createFile(name, '\uFEFF' + String(req.text || '').slice(0, 20000), MimeType.PLAIN_TEXT);
+      return json({ ok: true, id: file.getId() });
+    }
+
     // Fallback: compressed photo sent as base64 through this script.
     if (req.action === 'upload') {
       // Only allow writing into direct sub-folders of the root folder.
