@@ -397,3 +397,34 @@ html[data-dark="1"] .segmented button.on { color: var(--ink); }
 .swatch-prev i { position: absolute; inset: 15% 14%; border-radius: 10px; }
 .swatch-prev b { position: absolute; left: 24%; top: 28%; width: 26%; height: 9%; border-radius: 99px; }
 .swatch-prev u { position: absolute; left: 24%; top: 46%; width: 42%; height: 7%; border-radius: 99px; background: rgba(128,128,128,.35); }
+
+/* Upload progress */
+.upbar { padding: 14px 16px; }
+.upbar-top { display: flex; align-items: center; gap: 10px; font-weight: 700; }
+.upbar-top svg { color: var(--green-600); }
+.upbar-top span { flex: 1; }
+.upbar-track { height: 8px; border-radius: 99px; background: var(--surface-2); border: 1px solid var(--line); margin-top: 10px; overflow: hidden; }
+.upbar-track i { display: block; height: 100%; width: 0; border-radius: 99px; background: linear-gradient(90deg, var(--green-600), var(--gold)); transition: width .4s ease; }
+.upbar:not(.active) .upbar-track { display: none; }
+.upbar-hint { font-size: 12.5px; color: var(--ink-2); margin-top: 8px; }
+
+/* Grid date headers + time */
+.grid-date { grid-column: 1 / -1; font-size: 13.5px; font-weight: 700; color: var(--ink-2); margin: 8px 2px 0; }
+.grid-date:first-child { margin-top: 0; }
+.tile-time { position: absolute; right: 6px; bottom: 7px; font-size: 11px; font-weight: 700; color: #fff; text-shadow: 0 1px 3px rgba(0,0,0,.8); }
+.tile-badge { max-width: calc(100% - 52px); }
+
+/* Photo detail */
+.detail-img { position: relative; border-radius: 18px; overflow: hidden; background: var(--surface-2); }
+.detail-img img { display: block; width: 100%; max-height: 46dvh; object-fit: contain; background: #000; }
+.detail-img .tile-badge { left: 10px; bottom: 10px; font-size: 12.5px; padding: 5px 10px; }
+.detail-err { margin-top: 12px; background: var(--red-100); color: var(--red); border-radius: 12px; padding: 10px 12px; font-size: 13.5px; font-weight: 600; }
+.detail-list { margin: 14px 0 0; display: flex; flex-direction: column; }
+.detail-list > div { display: grid; grid-template-columns: 96px 1fr; gap: 12px; padding: 11px 2px; border-bottom: 1px solid var(--line); }
+.detail-list dt { color: var(--ink-2); font-size: 13.5px; font-weight: 600; }
+.detail-list dd { margin: 0; font-size: 15px; word-break: break-word; }
+.detail-list a { color: var(--green-600); font-weight: 700; text-decoration: none; }
+.detail-list .muted { color: var(--ink-2); }
+.detail-list .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px; }
+.detail-foot { grid-template-columns: 1fr 1fr; }
+.detail-foot:has(#detailRetry[hidden]) { grid-template-columns: 1fr; }

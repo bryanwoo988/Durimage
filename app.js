@@ -40,6 +40,7 @@
     reviewFolder: null,
     position: null,
     uploading: false,
+    batch: null, // { total, done } while an upload run is going
     onboardMode: null, // 'pw' | 'name' | 'reenter' | 'editName' | 'pwChanged'
   };
 
@@ -195,6 +196,34 @@
   $('pwCancel').onclick = hideOnboard;
   $('nameCancel').onclick = hideOnboard;
 
+  // ---------- Date helpers ----------
+  const LOCALE = () => ({ zh: 'zh-CN', en: 'en-GB', ms: 'ms-MY' }[state.lang] || 'en-GB');
+  function dayLabel(d) {
+    const today = new Date(); const y = new Date(); y.setDate(today.getDate() - 1);
+    if (d.toDateString() === today.toDateString()) return t('dToday');
+    if (d.toDateString() === y.toDateString()) return t('dYesterday');
+    return d.toLocaleDateString(LOCALE(), { day: 'numeric', month: 'short', year: d.getFullYear() === today.getFullYear() ? undefined : 'numeric', weekday: 'short' });
+  }
+  const timeLabel = (d) => d.toLocaleTimeString(LOCALE(), { hour: '2-digit', minute: '2-digit', hour12: false });
+
+  // ---------- Upload progress bar ----------
+  function renderUploadBar(pending) {
+    const bar = $('uploadBar');
+    if (!pending.length && !state.batch) { bar.hidden = true; return; }
+    bar.hidden = false;
+    const b = state.batch;
+    if (b) {
+      $('uploadText').textContent = t('uploadingN', { d: Math.min(b.done + 1, b.total), n: b.total });
+      $('uploadFill').style.width = Math.round((b.done / b.total) * 100) + '%';
+    } else {
+      $('uploadText').textContent = t('waitingN', { n: pending.length });
+      $('uploadFill').style.width = '0%';
+    }
+    bar.classList.toggle('active', !!b);
+    $('uploadAllBtn').hidden = !!b || !navigator.onLine || !state.password;
+    $('uploadHint').hidden = !b;
+  }
+
   // ---------- Render ----------
   function render() {
     $('demoBanner').hidden = !DEMO;
@@ -210,17 +239,24 @@
     $('statPending').textContent = pending.length;
     $('statDone').textContent = state.items.filter((i) => i.status === 'done').length;
 
-    const items = [...state.items].sort((a, b) => b.createdAt - a.createdAt).slice(0, 30);
+    const items = [...state.items].sort((a, b) => b.createdAt - a.createdAt).slice(0, 60);
     $('emptyState').hidden = items.length > 0;
+    let lastDay = '';
     $('recentGrid').innerHTML = items.map((i) => {
+      const d = new Date(i.capturedAt || i.createdAt);
+      const day = dayLabel(d);
+      const head = day !== lastDay ? `<div class="grid-date">${esc(day)}</div>` : '';
+      lastDay = day;
       const icon = i.status === 'done' ? '<svg><use href="#i-check"/></svg>' : i.status === 'error' ? '<svg><use href="#i-retry"/></svg>' : '';
-      return `<button class="tile" data-id="${esc(i.id)}">
+      return `${head}<button class="tile" data-id="${esc(i.id)}">
         <img src="${i.thumb}" alt="" loading="lazy">
         <div class="tile-folder">${esc(i.folderName)}</div>
         ${i.note ? '<div class="tile-note"><svg><use href="#i-note"/></svg></div>' : ''}
         <div class="tile-badge b-${i.status}">${icon}<span>${t(i.status === 'error' ? 'retry' : i.status)}</span></div>
+        <div class="tile-time">${esc(timeLabel(d))}</div>
       </button>`;
     }).join('');
+    renderUploadBar(pending);
 
     $('gpsToggle').checked = state.gps;
     $('nameValue').textContent = state.name || '—';
@@ -342,6 +378,12 @@
     try { return (await drawScaled(file, { minEdge: 240 })).toDataURL('image/jpeg', 0.7); }
     catch { return PLACEHOLDER; }
   }
+  async function makePreview(file) {
+    try {
+      const c = await drawScaled(file, { maxEdge: 1280 });
+      return await new Promise((r) => c.toBlob(r, 'image/jpeg', 0.8));
+    } catch { return null; }
+  }
   // Only used as a fallback when sending the original straight to Drive is not possible.
   async function compress(file) {
     const c = await drawScaled(file, { maxEdge: MAX_EDGE });
@@ -384,14 +426,17 @@
         folderId: folder.id, folderName: folder.name,
         name: fileName(new Date(now.getTime() + i * 1000), folder.name, ext, id),
         mime: f.type || 'image/jpeg', size: f.size, description, note, thumb: await makeThumb(f),
-        capturedAt: now.toISOString(), pos: pos || null,
+        capturedAt: now.toISOString(), pos: pos || null, by: state.name,
       };
       await putBlob(id, f); // the untouched original
+      const preview = await makePreview(f);
+      if (preview) await putBlob(id + '_p', preview); // kept after upload so the detail view still has a picture
       await putItem(item);
       state.items.push(item);
     }
     resetReview();
     render();
+    try { navigator.storage && navigator.storage.persist && navigator.storage.persist(); } catch {}
     toast(t(navigator.onLine ? 'savedQueued' : 'savedOffline', { n: files.length }));
     processQueue();
   };
@@ -453,84 +498,147 @@
     tz: Intl.DateTimeFormat().resolvedOptions().timeZone,
   });
 
+  const CONCURRENCY = 3; // photos sent at the same time
+
+  async function processOne(item, run) {
+    item.status = 'uploading'; render();
+    try {
+      // Photo first (skipped if an earlier attempt already got it into Drive), then the Sheet row.
+      let res = { ok: true, id: item.driveId };
+      if (!item.driveId) {
+        res = await uploadOne(item);
+        if (res.ok) {
+          item.driveId = res.id; item.compressed = !!res.compressed; if (res.name) item.uploadedName = res.name;
+          await putItem(item); await delBlob(item.id);
+        }
+      }
+      if (res.ok && item.note && !item.logged) {
+        res = await api(logRow(item));
+        if (res.ok) item.logged = true;
+      }
+      if (res.ok) {
+        item.status = 'done'; item.error = null;
+        run.doneByFolder[item.folderName] = (run.doneByFolder[item.folderName] || 0) + 1;
+      } else if (res.error === 'bad_key') {
+        item.status = 'queued'; run.rejected = true;
+      } else {
+        item.status = 'error'; item.error = res.error || 'unknown'; // e.g. bad_folder: removed by admin
+      }
+    } catch (e) {
+      console.error(e);
+      item.status = 'queued'; // network problem: keep it for the next attempt
+      item.error = String(e.message || e);
+      run.stop = true;
+    }
+    await putItem(item);
+  }
+
   async function processQueue() {
     if (state.uploading || !navigator.onLine || !state.password) return;
+    const todo = state.items.filter((i) => i.status === 'queued' || i.status === 'uploading')
+      .sort((a, b) => a.createdAt - b.createdAt);
+    if (!todo.length) { render(); return; }
     state.uploading = true;
-    const doneByFolder = {};
-    let rejected = false;
-    try {
-      for (const item of [...state.items].sort((a, b) => a.createdAt - b.createdAt)) {
-        if (item.status === 'done' || item.status === 'error') continue;
-        if (!navigator.onLine) break;
-        item.status = 'uploading'; render();
-        try {
-          // Photo first (skipped if an earlier attempt already got it into Drive), then the Sheet row.
-          let res = { ok: true, id: item.driveId };
-          if (!item.driveId) {
-            res = await uploadOne(item);
-            if (res.ok) {
-              item.driveId = res.id; item.compressed = !!res.compressed; if (res.name) item.uploadedName = res.name;
-              await putItem(item); await delBlob(item.id);
-            }
-          }
-          if (res.ok && item.note && !item.logged) {
-            res = await api(logRow(item));
-            if (res.ok) item.logged = true;
-          }
-          if (res.ok) {
-            item.status = 'done'; item.error = null;
-            doneByFolder[item.folderName] = (doneByFolder[item.folderName] || 0) + 1;
-          } else if (res.error === 'bad_key') {
-            item.status = 'queued'; rejected = true;
-          } else if (res.error === 'bad_folder') {
-            item.status = 'error'; item.error = res.error; // folder removed/renamed by admin
-          } else {
-            item.status = 'error'; item.error = res.error || 'unknown';
-          }
-        } catch (e) {
-          console.error(e);
-          item.status = 'queued'; // network problem: keep for the next attempt
-          item.error = String(e.message || e);
-          await putItem(item);
-          break;
-        }
-        await putItem(item);
+    state.batch = { total: todo.length, done: 0 };
+    const run = { doneByFolder: {}, rejected: false, stop: false };
+    let next = 0;
+    const worker = async () => {
+      while (!run.stop && !run.rejected && navigator.onLine) {
+        const item = todo[next++];
+        if (!item) return;
+        await processOne(item, run);
+        state.batch.done++;
         render();
-        if (rejected) break;
       }
+    };
+    try {
+      await Promise.all(Array.from({ length: Math.min(CONCURRENCY, todo.length) }, worker));
     } finally {
       state.uploading = false;
+      state.batch = null;
+      // Anything this run did not reach goes back to "queued" (e.g. stopped by a network drop).
+      for (const i of todo) if (i.status === 'uploading') { i.status = 'queued'; await putItem(i); }
     }
-    const entries = Object.entries(doneByFolder);
+    const entries = Object.entries(run.doneByFolder);
     if (entries.length) toast(entries.map(([f, n]) => t('uploadedOk', { n, f })).join(' · '));
     else if (state.items.some((i) => i.status === 'error')) toast(t('uploadFail'), true);
     await trimHistory();
     render();
-    if (rejected) passwordRejected();
+    if (run.rejected) { passwordRejected(); return; }
+    // Photos saved while this run was going → start another run.
+    if (!run.stop && navigator.onLine && state.items.some((i) => i.status === 'queued')) processQueue();
   }
 
   async function trimHistory() {
     const done = state.items.filter((i) => i.status === 'done').sort((a, b) => b.createdAt - a.createdAt);
     const drop = done.slice(120);
-    for (const old of drop) await delItem(old.id);
+    for (const old of drop) { await delItem(old.id); await delBlob(old.id + '_p'); }
     const ids = new Set(drop.map((i) => i.id));
     state.items = state.items.filter((i) => !ids.has(i.id));
   }
 
-  $('recentGrid').addEventListener('click', async (e) => {
-    const tile = e.target.closest('.tile');
-    if (!tile) return;
-    const item = state.items.find((i) => i.id === tile.dataset.id);
-    if (item && item.status === 'error') {
-      // If the folder disappeared, send it to the currently selected folder instead.
-      if (item.error === 'bad_folder' && state.currentFolder) {
-        const f = state.folders.find((x) => x.id === state.currentFolder);
-        if (f) { item.folderId = f.id; item.folderName = f.name; }
-      }
-      item.status = 'queued'; await putItem(item); render();
-      processQueue();
+  // ---------- Photo detail ----------
+  let detailUrl = null, detailId = null;
+  function requeue(item) {
+    // If the folder disappeared, send it to the currently selected folder instead.
+    if (item.error === 'bad_folder' && state.currentFolder) {
+      const f = state.folders.find((x) => x.id === state.currentFolder);
+      if (f) { item.folderId = f.id; item.folderName = f.name; }
     }
+    item.status = 'queued'; item.error = null;
+    return putItem(item);
+  }
+  async function openDetail(id) {
+    const item = state.items.find((i) => i.id === id);
+    if (!item) return;
+    detailId = id;
+    if (detailUrl) { URL.revokeObjectURL(detailUrl); detailUrl = null; }
+    const blob = (await getBlob(id + '_p')) || (await getBlob(id));
+    if (blob) detailUrl = URL.createObjectURL(blob);
+    $('detailImg').src = detailUrl || item.thumb;
+    const badge = $('detailBadge');
+    badge.className = 'tile-badge b-' + item.status;
+    badge.textContent = t(item.status);
+    $('detailErr').hidden = item.status !== 'error';
+    $('detailErr').textContent = item.error === 'bad_folder' ? t('errFolder') : t('errGeneric');
+    const d = new Date(item.capturedAt || item.createdAt);
+    const pos = item.pos;
+    const rows = [
+      ['fFolder', esc(item.folderName)],
+      ['fTime', esc(d.toLocaleString(LOCALE(), { dateStyle: 'medium', timeStyle: 'short' }))],
+      ['fBy', esc(item.by || (item.description.match(/^Photographer: (.*)$/m) || [])[1] || '')],
+      ['fNote', item.note ? esc(item.note).replace(/\n/g, '<br>') : `<span class="muted">${esc(t('noNote'))}</span>`],
+      ['fGps', pos ? `${pos.lat.toFixed(5)}, ${pos.lng.toFixed(5)} (±${pos.acc} m)<br><a href="https://maps.google.com/?q=${pos.lat},${pos.lng}" target="_blank" rel="noopener">${esc(t('openMap'))}</a>` : `<span class="muted">${esc(t('noGps'))}</span>`],
+      ['fFile', `<span class="mono">${esc(item.uploadedName || item.name)}</span>`],
+    ];
+    if (item.status === 'done') rows.push(['fQuality', esc(t(item.compressed ? 'qCompressed' : 'qOriginal'))]);
+    $('detailList').innerHTML = rows.map(([k, v]) => `<div><dt>${esc(t(k))}</dt><dd>${v}</dd></div>`).join('');
+    const canAct = item.status !== 'done' && item.status !== 'uploading';
+    $('detailFoot').hidden = !canAct;
+    $('detailRetry').hidden = !(item.status === 'error' || (item.status === 'queued' && navigator.onLine));
+    openSheet('detailSheet');
+  }
+  $('recentGrid').addEventListener('click', (e) => {
+    const tile = e.target.closest('.tile');
+    if (tile) openDetail(tile.dataset.id);
   });
+  $('detailRetry').onclick = async () => {
+    const item = state.items.find((i) => i.id === detailId);
+    if (!item) return;
+    await requeue(item);
+    closeSheet('detailSheet'); render(); processQueue();
+  };
+  $('detailDelete').onclick = async () => {
+    const item = state.items.find((i) => i.id === detailId);
+    if (!item || !confirm(t('confirmDelete'))) return;
+    await delItem(item.id); await delBlob(item.id); await delBlob(item.id + '_p');
+    state.items = state.items.filter((i) => i.id !== item.id);
+    closeSheet('detailSheet'); render(); toast(t('deleted'));
+  };
+  $('uploadAllBtn').onclick = async () => {
+    for (const i of state.items) if (i.status === 'error') await requeue(i);
+    render(); processQueue();
+  };
 
   // ---------- Appearance: 4 light + 4 dark themes ----------
   // Swatch colours mirror the CSS variables in styles.css: [background, card, accent]
@@ -610,7 +718,7 @@
   $('editNameBtn').onclick = () => { closeSheet('settingsSheet'); showOnboard('editName'); };
   $('reenterPwBtn').onclick = () => { closeSheet('settingsSheet'); showOnboard('reenter'); };
   $('clearHistoryBtn').onclick = async () => {
-    for (const i of state.items.filter((x) => x.status === 'done')) await delItem(i.id);
+    for (const i of state.items.filter((x) => x.status === 'done')) { await delItem(i.id); await delBlob(i.id + '_p'); }
     state.items = state.items.filter((x) => x.status !== 'done');
     render(); toast(t('historyCleared'));
   };

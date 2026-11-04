@@ -71,6 +71,16 @@
       <div class="banner banner-offline" id="offlineBanner" hidden>
         <svg><use href="#i-offline"/></svg><span data-i18n="offline"></span>
       </div>
+      <section class="card upbar" id="uploadBar" hidden>
+        <div class="upbar-top">
+          <svg><use href="#i-cloud"/></svg>
+          <span id="uploadText"></span>
+          <button class="btn btn-small btn-primary" id="uploadAllBtn" data-i18n="uploadAll"></button>
+        </div>
+        <div class="upbar-track"><i id="uploadFill"></i></div>
+        <div class="upbar-hint" id="uploadHint" data-i18n="keepOpen"></div>
+      </section>
+
       <button class="card dest-card" id="destCard">
         <div class="dest-icon"><svg><use href="#i-folder-fill"/></svg></div>
         <div class="dest-text">
@@ -194,7 +204,25 @@
       </div>
       <button class="btn btn-outline btn-block share-row" id="shareRowBtn"><svg><use href="#i-qr"/></svg><span data-i18n="shareApp"></span></button>
       <button class="btn btn-ghost btn-block" id="clearHistoryBtn" data-i18n="clearHistory"></button>
-      <div class="version">Durimage v1.2</div>
+      <div class="version">Durimage v1.3</div>
+    </div>
+  </div>
+
+  <!-- Photo detail sheet -->
+  <div class="sheet-backdrop" id="detailSheet" hidden>
+    <div class="sheet sheet-tall" role="dialog" aria-modal="true">
+      <div class="sheet-grip"></div>
+      <div class="sheet-head">
+        <h2 data-i18n="detailTitle"></h2>
+        <button class="icon-btn" data-close aria-label="Close"><svg><use href="#i-x"/></svg></button>
+      </div>
+      <div class="detail-img"><img id="detailImg" alt=""><span id="detailBadge"></span></div>
+      <div class="detail-err" id="detailErr" hidden></div>
+      <dl class="detail-list" id="detailList"></dl>
+      <div class="sheet-foot detail-foot" id="detailFoot">
+        <button class="btn btn-ghost" id="detailDelete" data-i18n="deleteFromPhone"></button>
+        <button class="btn btn-primary" id="detailRetry" data-i18n="retry"></button>
+      </div>
     </div>
   </div>
 
