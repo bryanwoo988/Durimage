@@ -800,8 +800,20 @@
   window.addEventListener('offline', render);
   document.addEventListener('visibilitychange', () => { if (!document.hidden) { processQueue(); checkForUpdate(false); maybeReload(); } });
 
+  // iPhone home-screen apps: after the keyboard closes, the window can stay shrunk (bottom bar
+  // floats up, strip at the bottom). Scrolling back to the top once the last field loses focus
+  // makes iOS restore the full window; then re-measure.
+  document.addEventListener('focusout', () => {
+    setTimeout(() => {
+      const el = document.activeElement;
+      if (el && /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName)) return; // moved to another field
+      if (window.visualViewport && window.visualViewport.offsetTop === 0 && window.scrollY === 0) { setAppHeight(); return; }
+      window.scrollTo(0, 0);
+      setAppHeight();
+    }, 120);
+  });
   // Keep --app-h equal to the real window height (rotation, iOS toolbars, keyboard closing).
-  const setAppHeight = () => document.documentElement.style.setProperty('--app-h', window.innerHeight + 'px');
+  function setAppHeight() { document.documentElement.style.setProperty('--app-h', window.innerHeight + 'px'); }
   window.addEventListener('resize', setAppHeight);
   window.addEventListener('orientationchange', () => setTimeout(setAppHeight, 300));
 

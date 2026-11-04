@@ -2,6 +2,15 @@
 // When releasing: add a new entry at the TOP and set the same version in sw.js (VERSION).
 window.DURIMAGE_CHANGELOG = [
   {
+    version: '1.2.2',
+    date: '2026-11-04T15:20:00Z',
+    notes: {
+      zh: ['修正 iPhone 主屏幕 App 在打过字（键盘收起）之后，首页底部导航栏往上浮、下面出现黑边的问题'],
+      en: ['Fixed the bottom bar floating up with a dark strip below it on the iPhone home-screen app after typing (keyboard closed)'],
+      ms: ['Membaiki bar bawah yang terapung dengan jalur gelap di bawahnya pada aplikasi skrin utama iPhone selepas menaip'],
+    },
+  },
+  {
     version: '1.2.1',
     date: '2026-11-04T15:05:00Z',
     notes: {
