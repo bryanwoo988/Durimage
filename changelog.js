@@ -3,6 +3,15 @@
 // date = the real release time in UTC (the moment it is pushed), e.g. from `date -u +%Y-%m-%dT%H:%M:%SZ`.
 window.DURIMAGE_CHANGELOG = [
   {
+    version: '1.7.1',
+    date: '2026-11-05T14:50:17Z',
+    notes: {
+      zh: ['修好：有些照片在审核清单没有缩图（草地、落叶这类画面比较复杂的照片，缩图太大，存不进去）', '以前缺缩图的照片，现在会直接从 Drive 拿一张小图来显示'],
+      en: ['Fixed: some photos had no thumbnail in the review list (busy photos like grass or fallen leaves made thumbnails too big to save)', 'Photos that are already missing a thumbnail now load a small copy from Drive'],
+      ms: ['Dibaiki: sesetengah foto tiada imej kecil dalam senarai semakan (foto sibuk seperti rumput atau daun gugur menghasilkan imej kecil yang terlalu besar untuk disimpan)', 'Foto yang sudah tiada imej kecil kini memuatkan salinan kecil dari Drive'],
+    },
+  },
+  {
     version: '1.7.0',
     date: '2026-11-05T14:12:09Z',
     notes: {

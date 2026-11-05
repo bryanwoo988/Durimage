@@ -758,16 +758,26 @@
     bmp.close?.();
     return c;
   }
+  // The server keeps a thumbnail only if it is under 45,000 characters (one Google Sheets cell).
+  // Busy photos (grass, fallen leaves) make bigger JPEGs, so shrink until it fits.
+  const THUMB_MAX = 40000;
+  function fitThumb(src) {
+    let url = '';
+    for (const edge of [240, 200, 160, 120]) {
+      const k = edge / Math.min(src.width, src.height);
+      const tc = document.createElement('canvas');
+      tc.width = Math.round(src.width * k); tc.height = Math.round(src.height * k);
+      tc.getContext('2d').drawImage(src, 0, 0, tc.width, tc.height);
+      for (const q of [0.7, 0.55, 0.4]) { url = tc.toDataURL('image/jpeg', q); if (url.length < THUMB_MAX) return url; }
+    }
+    return url;
+  }
   // Thumbnail (grid) + preview (detail view) from a single decode of the original.
   async function makeImages(file) {
     try {
       const c = await drawScaled(file, { maxEdge: 2048 }); // detail/zoom preview kept on the phone
-      const k = 240 / Math.min(c.width, c.height);
-      const tc = document.createElement('canvas');
-      tc.width = Math.round(c.width * k); tc.height = Math.round(c.height * k);
-      tc.getContext('2d').drawImage(c, 0, 0, tc.width, tc.height);
       const preview = await new Promise((r) => c.toBlob(r, 'image/jpeg', 0.8));
-      return { thumb: tc.toDataURL('image/jpeg', 0.7), preview };
+      return { thumb: fitThumb(c), preview };
     } catch { return { thumb: PLACEHOLDER, preview: null }; }
   }
   // Only used as a fallback when sending the original straight to Drive is not possible.
@@ -1737,9 +1747,32 @@
       for (let k = 0; k < ids.length; k += 30) {
         const r = await api({ action: 'thumbs', key: state.password, tz: tzName(), ids: ids.slice(k, k + 30) });
         if (!r.ok) break;
-        Object.entries(r.thumbs || {}).forEach(([id, th]) => { if (th) thumbCache.set(id, th); const el = document.querySelector(`.rv-item[data-sid="${CSS.escape(id)}"] .rv-thumb`); if (el && th) el.style.backgroundImage = `url('${th}')`; });
+        Object.entries(r.thumbs || {}).forEach(([id, th]) => { if (th) setThumb(id, th); });
+        // No saved thumbnail (it was too big for the sheet): get a small copy from Drive instead.
+        for (const id of ids.slice(k, k + 30)) if (!thumbCache.has(id)) await driveThumb(id);
       }
     } catch {} finally { thumbBusy = false; }
+  }
+  function setThumb(id, th) {
+    thumbCache.set(id, th);
+    document.querySelectorAll(`.rv-item[data-sid="${CSS.escape(id)}"] .rv-thumb, .rv-thumb[data-tid="${CSS.escape(id)}"]`).forEach((el) => { el.style.backgroundImage = `url('${th}')`; });
+  }
+  const thumbTried = new Set();
+  async function driveThumb(id) {
+    if (DEMO || thumbTried.has(id)) return;
+    thumbTried.add(id);
+    const s = revState.items.find((x) => x.id === id);
+    if (!s || !s.fileId) return;
+    try {
+      const r = await api({ action: 'image', key: state.password, tz: tzName(), fileId: s.fileId, size: 240 });
+      if (!r.ok || !r.data) return;
+      let th = `data:${r.mime || 'image/jpeg'};base64,${r.data}`;
+      if (th.length > THUMB_MAX * 2) { // Drive sent the full photo: shrink it so the list stays light
+        const im = new Image(); im.src = th; await im.decode();
+        th = fitThumb(im);
+      }
+      setThumb(id, th);
+    } catch {}
   }
   $('revTabs').onclick = (e) => { const b = e.target.closest('[data-tab]'); if (b) { revState.tab = b.dataset.tab; renderQueue(); } };
   [['revSort', 'sort'], ['revCat', 'cat'], ['revBy', 'by'], ['revOrchard', 'orchard'], ['revDate', 'date']].forEach(([id, k]) => { $(id).onchange = () => { revState[k] = $(id).value; renderQueue(); }; });
@@ -2281,7 +2314,7 @@
     $('revEmptyText').textContent = t('rmEmpty');
     $('revList').innerHTML = list.map((r) => {
       const thumb = r.subId ? thumbCache.get(r.subId) : '';
-      return `<div class="rv-item rm-item"><div class="rv-thumb" ${thumb ? `style="background-image:url('${thumb}')"` : ''}></div>
+      return `<div class="rv-item rm-item"><div class="rv-thumb" data-tid="${esc(r.subId || '')}" ${thumb ? `style="background-image:url('${thumb}')"` : ''}></div>
         <div><div class="rv-title">${esc(r.folder || '')}</div>
         <div class="rv-meta">${esc(r.by || '')}${r.reason ? ' · ' + esc(r.reason) : ''}</div>
         <div class="rv-meta">${esc(t('removedByAt', { who: r.removedBy || '', d: fmtDateTime(r.at) }))}</div>

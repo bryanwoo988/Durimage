@@ -1,7 +1,7 @@
 // Service worker: offline app shell + automatic updates.
 // Bump VERSION (and add an entry at the top of changelog.js) for every release.
 // Any change to this file makes phones install the new version automatically.
-const VERSION = '1.7.0';
+const VERSION = '1.7.1';
 const CACHE = 'durimage-' + VERSION;
 const SHELL = [
   './', 'index.html', 'styles.css', 'app.js', 'i18n.js', 'config.js', 'changelog.js', 'manifest.webmanifest',
