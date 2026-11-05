@@ -94,6 +94,7 @@
     <symbol id="i-tree" viewBox="0 0 24 24"><path d="M12 21v-6M12 15c-4.4 0-7-2.3-7-5.3C5 6.6 8 3.5 12 3.5s7 3.1 7 6.2c0 3-2.6 5.3-7 5.3zM9 21h6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
     <symbol id="i-next" viewBox="0 0 24 24"><path d="M5 12h12m-4.5-5 5 5-5 5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
     <symbol id="i-flag" viewBox="0 0 24 24"><path d="M5 21V4m0 0h11l-2 4 2 4H5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-zoom" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M15.5 15.5 20 20M10.5 7.5v6M7.5 10.5h6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
     <symbol id="i-logo" viewBox="0 0 64 64"><g fill="currentColor"><path d="M32 4l4 7 7-4 1 8 8-1-2 8 7 3-5 6 5 6-7 3 2 8-8-1-1 8-7-4-4 7-4-7-7 4-1-8-8 1 2-8-7-3 5-6-5-6 7-3-2-8 8 1 1-8 7 4z"/></g><ellipse cx="32" cy="34" rx="11" ry="12" fill="#fbbf24"/><path d="M32 22c-1-4 1-8 5-10" stroke="#fbbf24" stroke-width="3" fill="none" stroke-linecap="round"/></symbol>
   </svg>
 
@@ -312,7 +313,7 @@
         <h2 data-i18n="detailTitle"></h2>
         <button class="icon-btn" data-close aria-label="Close"><svg><use href="#i-x"/></svg></button>
       </div>
-      <div class="detail-img"><img id="detailImg" alt=""><span id="detailBadge"></span></div>
+      <div class="detail-img"><img id="detailImg" alt=""><span class="zoom-badge"><svg><use href="#i-zoom"/></svg></span><span id="detailBadge"></span></div>
       <div class="detail-err" id="detailErr" hidden></div>
       <dl class="detail-list" id="detailList"></dl>
       <div class="sheet-foot detail-foot" id="detailFoot">
@@ -489,6 +490,13 @@
         <button class="ob-lang" id="onboardLangBtn" type="button"><span data-i18n="switchLangQ"></span> <b id="onboardLangLabel"></b></button>
       </div>
     </div>
+  </div>
+
+  <!-- Full-screen photo viewer: pinch / double-tap to zoom, drag to pan -->
+  <div class="viewer" id="viewer" hidden>
+    <div class="viewer-stage" id="viewerStage"><img id="viewerImg" alt="" draggable="false"></div>
+    <button class="viewer-close" id="viewerClose" aria-label="Close"><svg><use href="#i-x"/></svg></button>
+    <div class="viewer-hint" id="viewerHint" data-i18n="zoomHint"></div>
   </div>
 
   <div class="toast" id="toast" role="status" aria-live="polite"></div>

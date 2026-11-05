@@ -560,3 +560,15 @@ html.vp-gap .dock { padding-bottom: 10px; }
 .gps-line.bad svg, .gps-line.bad { color: var(--red); }
 .gps-warn { margin-top: 8px; padding: 10px 12px; border-radius: 12px; background: var(--red-100); color: var(--red); font-size: 13px; line-height: 1.45; }
 .tile-badge.b-done { padding: 4px; }
+
+/* Full-screen photo viewer */
+.viewer { position: fixed; inset: 0; z-index: 150; background: #000; touch-action: none; }
+.viewer-stage { position: absolute; inset: 0; overflow: hidden; touch-action: none; }
+.viewer-stage img { position: absolute; left: 0; top: 0; width: 100%; height: 100%; object-fit: contain; transform-origin: 0 0; will-change: transform; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+.viewer-close { position: absolute; top: calc(12px + var(--safe-t)); right: 14px; width: 46px; height: 46px; border-radius: 50%; display: grid; place-items: center; background: rgba(255,255,255,.16); color: #fff; backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
+.viewer-hint { position: absolute; left: 50%; bottom: calc(24px + var(--safe-b)); transform: translateX(-50%); color: rgba(255,255,255,.85); font-size: 13px; background: rgba(0,0,0,.45); padding: 7px 14px; border-radius: 99px; white-space: nowrap; transition: opacity .4s; pointer-events: none; }
+.viewer-hint.gone { opacity: 0; }
+.detail-img { cursor: zoom-in; }
+.zoom-badge { position: absolute; right: 10px; bottom: 10px; width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center; background: rgba(0,0,0,.5); color: #fff; pointer-events: none; }
+.zoom-badge svg { width: 20px; height: 20px; }
+.review-strip img { cursor: zoom-in; }

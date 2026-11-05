@@ -1,5 +1,6 @@
 window.I18N = {
   zh: {
+    zoomHint: '两指放大 · 双击放大 · 放大后可拖动',
     gpsSearching: '正在定位…', gpsImproving: '正在提高精确度', gpsDenied: '没有定位权限，照片不会记录位置',
     gpsPreciseHint: '位置误差很大。请到空旷的地方等几秒再按保存。如果一直这样：iPhone 请到 设置 → 隐私与安全性 → 定位服务 → Safari 网站，打开「精确位置」；Android 请在定位设置里开启「精确位置」。',
     needTagFirst: '这个果园用树牌号码，请先输入这棵树的树牌，才能拍照。没有树牌的话，这些照片只能当训练集。', tagMissing: '未填树牌',
@@ -123,6 +124,7 @@ window.I18N = {
     saved: '已保存',
   },
   en: {
+    zoomHint: 'Pinch or double-tap to zoom · drag to move',
     gpsSearching: 'Finding location…', gpsImproving: 'improving accuracy', gpsDenied: 'No location permission; photos will not record a location',
     gpsPreciseHint: 'The location is very inaccurate. Move into the open and wait a few seconds before saving. If it stays like this: on iPhone go to Settings → Privacy & Security → Location Services → Safari Websites and turn on Precise Location; on Android turn on precise location in location settings.',
     needTagFirst: 'This orchard uses tree tags. Enter this tree\'s tag before taking photos; without a tag the photos can only be used for training.', tagMissing: 'No tag yet',
@@ -246,6 +248,7 @@ window.I18N = {
     saved: 'Saved',
   },
   ms: {
+    zoomHint: 'Cubit atau ketik dua kali untuk zum · seret untuk alih',
     gpsSearching: 'Mencari lokasi…', gpsImproving: 'meningkatkan ketepatan', gpsDenied: 'Tiada kebenaran lokasi; foto tidak akan merekod lokasi',
     gpsPreciseHint: 'Lokasi sangat tidak tepat. Pergi ke kawasan lapang dan tunggu beberapa saat sebelum menyimpan. Jika berterusan: pada iPhone pergi ke Tetapan → Privasi & Keselamatan → Perkhidmatan Lokasi → Laman Web Safari dan hidupkan Lokasi Tepat; pada Android hidupkan lokasi tepat dalam tetapan lokasi.',
     needTagFirst: 'Kebun ini guna tag pokok. Masukkan tag pokok ini sebelum merakam; tanpa tag foto hanya untuk latihan.', tagMissing: 'Tiada tag',

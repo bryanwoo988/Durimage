@@ -3,6 +3,15 @@
 // date = the real release time in UTC (the moment it is pushed), e.g. from `date -u +%Y-%m-%dT%H:%M:%SZ`.
 window.DURIMAGE_CHANGELOG = [
   {
+    version: '1.4.4',
+    date: '2026-11-05T04:37:29Z',
+    notes: {
+      zh: ['照片可以放大了：点照片打开全屏，两指放大、双击放大，放大后可以拖动', '「保存照片」画面里刚拍的照片也能点开放大检查', '新拍的照片在手机里保留更清楚的预览图，放大看得更清楚'],
+      en: ['Photos can now be zoomed: tap to open full screen, pinch or double-tap to zoom, drag to move', 'Just-taken photos in Save photos can be opened full size to check them', 'New photos keep a sharper preview on the phone for clearer zooming'],
+      ms: ['Foto kini boleh dizum: ketik untuk skrin penuh, cubit atau ketik dua kali untuk zum, seret untuk alih', 'Foto yang baru diambil dalam Simpan foto boleh dibuka saiz penuh untuk disemak', 'Foto baharu menyimpan pratonton lebih tajam dalam telefon untuk zum lebih jelas'],
+    },
+  },
+  {
     version: '1.4.3',
     date: '2026-11-05T01:16:04Z',
     notes: {

@@ -132,7 +132,7 @@
     toastTimer = setTimeout(() => { el.className = 'toast'; }, 2800);
   }
   const openSheet = (id) => { clearTimeout(toastTimer); $('toast').className = 'toast'; $(id).hidden = false; };
-  const closeSheet = (id) => { $(id).hidden = true; };
+  const closeSheet = (id) => { $(id).hidden = true; if (id === 'detailSheet' || id === 'reviewSheet') { const v = $('viewer'); if (v && !v.hidden) closeViewer(); } };
   document.querySelectorAll('.sheet-backdrop').forEach((bd) => {
     bd.addEventListener('click', (e) => {
       const outside = e.target === bd;
@@ -723,7 +723,7 @@
   // Thumbnail (grid) + preview (detail view) from a single decode of the original.
   async function makeImages(file) {
     try {
-      const c = await drawScaled(file, { maxEdge: 1280 });
+      const c = await drawScaled(file, { maxEdge: 2048 }); // detail/zoom preview kept on the phone
       const k = 240 / Math.min(c.width, c.height);
       const tc = document.createElement('canvas');
       tc.width = Math.round(c.width * k); tc.height = Math.round(c.height * k);
@@ -992,6 +992,83 @@
     state.items = state.items.filter((i) => !ids.has(i.id));
   }
 
+  // ---------- Full-screen viewer (pinch / double-tap zoom, drag to pan) ----------
+  const vw = { s: 1, x: 0, y: 0, pts: new Map(), pinch: null, pan: null, lastTap: 0, url: null };
+  function vwApply() {
+    const st = $('viewerStage'), W = st.clientWidth, H = st.clientHeight;
+    vw.s = Math.min(8, Math.max(1, vw.s));
+    // The photo is letter-boxed inside the screen; clamp against the photo itself, not the screen:
+    // bigger than the screen → no empty edge may show; smaller → keep it centred.
+    const im = $('viewerImg'), r = (im.naturalWidth || W) / (im.naturalHeight || H);
+    const cw = Math.min(W, H * r), ch = cw / r, ox = (W - cw) / 2, oy = (H - ch) / 2;
+    const fit = (pos, size, off, view) => size * vw.s <= view
+      ? (view - size * vw.s) / 2 - off * vw.s
+      : Math.min(-off * vw.s, Math.max(view - (off + size) * vw.s, pos));
+    vw.x = fit(vw.x, cw, ox, W);
+    vw.y = fit(vw.y, ch, oy, H);
+    $('viewerImg').style.transform = `translate(${vw.x}px, ${vw.y}px) scale(${vw.s})`;
+  }
+  function vwZoomAt(px, py, ns) { const p = { x: (px - vw.x) / vw.s, y: (py - vw.y) / vw.s }; vw.s = ns; vw.x = px - p.x * ns; vw.y = py - p.y * ns; vwApply(); }
+  function openViewer(src, ownedUrl) {
+    vw.s = 1; vw.x = 0; vw.y = 0; vw.pts.clear(); vw.pinch = vw.pan = null;
+    if (vw.url) URL.revokeObjectURL(vw.url);
+    vw.url = ownedUrl || null;
+    $('viewerImg').src = src;
+    $('viewerImg').style.transform = '';
+    $('viewer').hidden = false;
+    $('viewerHint').classList.remove('gone');
+    setTimeout(() => $('viewerHint').classList.add('gone'), 2500);
+  }
+  function closeViewer() { $('viewer').hidden = true; $('viewerImg').removeAttribute('src'); if (vw.url) { URL.revokeObjectURL(vw.url); vw.url = null; } }
+  $('viewerClose').onclick = closeViewer;
+  const stage = $('viewerStage');
+  const rel = (e) => { const r = stage.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; };
+  stage.addEventListener('pointerdown', (e) => {
+    try { stage.setPointerCapture(e.pointerId); } catch {} // keep tracking a finger that slides off the photo
+    vw.pts.set(e.pointerId, rel(e));
+    if (vw.pts.size === 2) {
+      const [a, b] = [...vw.pts.values()];
+      vw.pinch = { d: Math.hypot(a.x - b.x, a.y - b.y), s: vw.s, m: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }, x: vw.x, y: vw.y };
+      vw.pan = null;
+    } else if (vw.pts.size === 1) {
+      const p = rel(e);
+      vw.pan = { sx: p.x, sy: p.y, x: vw.x, y: vw.y, moved: false };
+    }
+  });
+  stage.addEventListener('pointermove', (e) => {
+    if (!vw.pts.has(e.pointerId)) return;
+    vw.pts.set(e.pointerId, rel(e));
+    if (vw.pinch && vw.pts.size >= 2) {
+      const [a, b] = [...vw.pts.values()];
+      const d = Math.hypot(a.x - b.x, a.y - b.y), m = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+      const ns = Math.min(8, Math.max(1, vw.pinch.s * d / vw.pinch.d));
+      const p = { x: (vw.pinch.m.x - vw.pinch.x) / vw.pinch.s, y: (vw.pinch.m.y - vw.pinch.y) / vw.pinch.s };
+      vw.s = ns; vw.x = m.x - p.x * ns; vw.y = m.y - p.y * ns; vwApply();
+    } else if (vw.pan) {
+      const p = rel(e);
+      if (Math.abs(p.x - vw.pan.sx) + Math.abs(p.y - vw.pan.sy) > 6) vw.pan.moved = true;
+      vw.x = vw.pan.x + p.x - vw.pan.sx; vw.y = vw.pan.y + p.y - vw.pan.sy; vwApply();
+    }
+  });
+  const vwUp = (e) => {
+    const wasPan = vw.pan && !vw.pan.moved && vw.pts.size === 1 && !vw.pinch;
+    vw.pts.delete(e.pointerId);
+    if (vw.pts.size < 2) vw.pinch = null;
+    if (vw.pts.size === 1) { const p = [...vw.pts.values()][0]; vw.pan = { sx: p.x, sy: p.y, x: vw.x, y: vw.y, moved: true }; }
+    if (vw.pts.size === 0) {
+      vw.pan = null;
+      if (wasPan) { // a tap: double-tap toggles zoom at that point
+        const now = Date.now(), p = rel(e);
+        if (now - vw.lastTap < 320) { vwZoomAt(p.x, p.y, vw.s > 1.05 ? 1 : 3); vw.lastTap = 0; }
+        else vw.lastTap = now;
+      }
+    }
+  };
+  stage.addEventListener('pointerup', vwUp);
+  stage.addEventListener('pointercancel', vwUp);
+  stage.addEventListener('wheel', (e) => { e.preventDefault(); const p = rel(e); vwZoomAt(p.x, p.y, Math.min(8, Math.max(1, vw.s * (e.deltaY < 0 ? 1.15 : 1 / 1.15)))); }, { passive: false });
+  window.addEventListener('resize', () => { if (!$('viewer').hidden) vwApply(); });
+
   // ---------- Photo detail ----------
   let detailUrl = null, detailId = null;
   function requeue(item) {
@@ -1042,6 +1119,13 @@
     $('detailRetry').hidden = !(item.status === 'error' || (item.status === 'queued' && navigator.onLine));
     openSheet('detailSheet');
   }
+  $('detailImg').closest('.detail-img').addEventListener('click', async () => {
+    const orig = detailId ? await getBlob(detailId) : null; // still on the phone = full resolution
+    if (orig) { const u = URL.createObjectURL(orig); openViewer(u, u); }
+    else openViewer($('detailImg').src);
+  });
+  // review sheet: tap a just-taken photo to check it full size before saving
+  $('reviewStrip').addEventListener('click', (e) => { const im = e.target.closest('img'); if (im) openViewer(im.src); });
   $('recentGrid').addEventListener('click', (e) => {
     const tile = e.target.closest('.tile');
     if (tile) openDetail(tile.dataset.id);
