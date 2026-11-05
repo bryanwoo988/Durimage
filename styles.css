@@ -514,3 +514,41 @@ html.vp-gap { --safe-b: 0px; }
 html.vp-gap .dock { padding-bottom: 10px; }
 /* Same idea for pop-up sheets: continue the sheet colour below the window edge. */
 .sheet-backdrop::after { content: ""; position: absolute; left: 0; right: 0; top: 100%; height: 160px; background: var(--surface); pointer-events: none; }
+
+/* ---------- Orchard & tree ---------- */
+.tree-card { display: grid; grid-template-columns: 1fr 1fr; padding: 0; overflow: hidden; }
+.tree-cell { text-align: left; padding: 14px 16px; min-width: 0; }
+.tree-cell + .tree-cell { border-left: 1px solid var(--line); }
+.tree-cell .dest-label { display: flex; align-items: center; gap: 6px; }
+.tree-cell .dest-label svg { width: 15px; height: 15px; color: var(--green-600); }
+.tree-val { font-size: 19px; font-weight: 800; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums; }
+.tree-val.muted { color: var(--ink-2); font-weight: 600; font-size: 16px; }
+
+/* "Next tree" in the dock: big target, usable one-handed / with gloves */
+.dock-next { color: var(--ink); }
+.dock-next .next-ic { width: 46px; height: 46px; border-radius: 15px; display: grid; place-items: center; background: var(--gold); color: #2b1a00; box-shadow: 0 4px 12px rgba(242,181,44,.35); }
+.dock-next .next-ic svg { width: 26px; height: 26px; color: #2b1a00; }
+.dock-next:active .next-ic { transform: scale(.94); }
+
+.text-input { width: 100%; height: 50px; font: inherit; font-size: 16px; color: var(--ink); background: var(--surface-2); border: 1.5px solid var(--line); border-radius: 14px; padding: 0 14px; text-transform: uppercase; }
+.text-input::placeholder { text-transform: none; }
+.text-input:focus { outline: none; border-color: var(--green-600); }
+.big-input { height: 60px; font-size: 24px; font-weight: 800; letter-spacing: .5px; margin-top: 6px; }
+.field-hint.warn { color: var(--red); font-weight: 600; }
+.chip-row { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip-row button { padding: 9px 14px; border-radius: 99px; border: 1.5px solid var(--line); background: var(--surface); font-weight: 700; font-size: 14px; }
+.chip-row button.on { border-color: var(--green-600); background: var(--green-100); }
+.day-actions { display: grid; gap: 10px; margin-top: 16px; }
+
+/* review sheet: orchard / tree */
+.review-meta { margin-top: 14px; }
+.rm-camera { display: flex; align-items: center; gap: 8px; padding: 12px 14px; border-radius: 14px; background: var(--surface-2); border: 1px solid var(--line); font-weight: 700; }
+.rm-camera svg { color: var(--green-600); }
+.rm-old { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 12px 14px; border-radius: 14px; background: var(--surface-2); border: 1px solid var(--line); cursor: pointer; }
+.rm-same { margin: 10px 2px 0; font-size: 12.5px; }
+.train-only { margin-top: 12px; padding: 11px 13px; border-radius: 14px; background: var(--gold-100); color: var(--gold-ink); font-size: 13.5px; line-height: 1.45; }
+.train-only b { display: block; font-size: 14px; margin-bottom: 2px; }
+.tile-train { position: absolute; top: 24px; left: 6px; font-size: 10px; font-weight: 800; padding: 2px 6px; border-radius: 6px; background: rgba(242,181,44,.95); color: #2b1a00; }
+.seg2 { grid-template-columns: 1fr 1fr; }
+.tm-desc { margin-top: 8px; }
+.rm-old .set-title { word-break: normal; overflow-wrap: anywhere; }

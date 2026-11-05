@@ -91,6 +91,9 @@
     <symbol id="i-eye-off" viewBox="0 0 24 24"><path d="M3 3l18 18M10.6 5.6c.5-.1.9-.1 1.4-.1 6 0 9.5 6.5 9.5 6.5a17 17 0 0 1-3 3.8M6.4 6.4C3.9 8.1 2.5 12 2.5 12S6 18.5 12 18.5c1.7 0 3.2-.5 4.5-1.2M9.9 9.9a3.2 3.2 0 0 0 4.2 4.2" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
     <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M12 7.5V12l3 2" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
     <symbol id="i-sparkle" viewBox="0 0 24 24"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8zM18.5 15.5l.8 2.2 2.2.8-2.2.8-.8 2.2-.8-2.2-2.2-.8 2.2-.8z" fill="currentColor"/></symbol>
+    <symbol id="i-tree" viewBox="0 0 24 24"><path d="M12 21v-6M12 15c-4.4 0-7-2.3-7-5.3C5 6.6 8 3.5 12 3.5s7 3.1 7 6.2c0 3-2.6 5.3-7 5.3zM9 21h6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-next" viewBox="0 0 24 24"><path d="M5 12h12m-4.5-5 5 5-5 5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-flag" viewBox="0 0 24 24"><path d="M5 21V4m0 0h11l-2 4 2 4H5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
     <symbol id="i-logo" viewBox="0 0 64 64"><g fill="currentColor"><path d="M32 4l4 7 7-4 1 8 8-1-2 8 7 3-5 6 5 6-7 3 2 8-8-1-1 8-7-4-4 7-4-7-7 4-1-8-8 1 2-8-7-3 5-6-5-6 7-3-2-8 8 1 1-8 7 4z"/></g><ellipse cx="32" cy="34" rx="11" ry="12" fill="#fbbf24"/><path d="M32 22c-1-4 1-8 5-10" stroke="#fbbf24" stroke-width="3" fill="none" stroke-linecap="round"/></symbol>
   </svg>
 
@@ -132,6 +135,17 @@
         <svg class="chev"><use href="#i-chev"/></svg>
       </button>
 
+      <section class="card tree-card" id="treeCard" hidden>
+        <button class="tree-cell" id="orchardBtn">
+          <div class="dest-label"><svg><use href="#i-flag"/></svg><span data-i18n="orchard"></span></div>
+          <div class="tree-val" id="orchardValue"></div>
+        </button>
+        <button class="tree-cell" id="treeBtn">
+          <div class="dest-label"><svg><use href="#i-tree"/></svg><span id="treeLabel"></span></div>
+          <div class="tree-val" id="treeValue"></div>
+        </button>
+      </section>
+
       <section class="stats">
         <div class="stat"><div class="stat-num" id="statToday">0</div><div class="stat-label" data-i18n="statToday"></div></div>
         <div class="stat stat-pending"><div class="stat-num" id="statPending">0</div><div class="stat-label" data-i18n="statPending"></div></div>
@@ -159,6 +173,7 @@
         <span class="shutter-ring"><span class="shutter-core"><svg><use href="#i-camera"/></svg></span></span>
       </label>
       <button class="dock-btn" id="foldersBtn"><svg><use href="#i-folder"/></svg><span data-i18n="folders"></span></button>
+      <button class="dock-btn dock-next" id="nextTreeBtn" hidden><span class="next-ic"><svg><use href="#i-next"/></svg></span><span data-i18n="nextTree"></span></button>
     </nav>
   </div>
 
@@ -174,6 +189,26 @@
       <div class="review-count" id="reviewCount"></div>
       <h3 class="section-title" data-i18n="chooseFolder"></h3>
       <div class="folder-chips" id="reviewFolders"></div>
+      <div class="review-meta" id="reviewMeta" hidden>
+        <div class="rm-camera" id="rmCamera"><svg><use href="#i-tree"/></svg><span id="rmCameraText"></span></div>
+        <div id="rmGallery">
+          <label class="rm-old">
+            <div><div class="set-title" data-i18n="oldPhotos"></div><div class="set-desc" data-i18n="oldPhotosDesc"></div></div>
+            <span class="switch"><input type="checkbox" id="oldToggle"><span></span></span>
+          </label>
+          <div id="rmFields">
+            <label class="field"><span data-i18n="orchardOptional"></span>
+              <input class="text-input" id="rmOrchard" autocapitalize="characters" autocomplete="off" spellcheck="false" maxlength="24" data-i18n-ph="orchardPh">
+            </label>
+            <label class="field"><span data-i18n="treeOptional"></span>
+              <input class="text-input" id="rmTree" autocapitalize="characters" autocomplete="off" spellcheck="false" maxlength="14" data-i18n-ph="treeOptionalPh">
+              <small class="field-hint" data-i18n="treeOptionalHint"></small>
+            </label>
+            <p class="hint rm-same" data-i18n="sameForAll"></p>
+          </div>
+        </div>
+        <div class="train-only" id="trainOnlyNote" hidden><b data-i18n="trainOnly"></b><span data-i18n="trainOnlyHint"></span></div>
+      </div>
       <label class="field">
         <span data-i18n="note"></span>
         <textarea id="noteInput" rows="3" data-i18n-ph="notePh"></textarea>
@@ -229,6 +264,18 @@
           <div class="set-desc" data-i18n="gpsDesc"></div>
         </div>
         <label class="switch"><input type="checkbox" id="gpsToggle"><span></span></label>
+      </div>
+      <div class="set-group set-row">
+        <div>
+          <div class="set-title" data-i18n="trackTree"></div>
+          <div class="set-desc" data-i18n="trackTreeDesc"></div>
+        </div>
+        <label class="switch"><input type="checkbox" id="trackToggle"><span></span></label>
+      </div>
+      <div class="set-group" id="treeModeGroup">
+        <div class="set-label" id="treeModeLabel"></div>
+        <div class="segmented seg2" id="treeModeSeg"></div>
+        <div class="set-desc tm-desc" id="treeModeDesc"></div>
       </div>
       <div class="set-group set-row">
         <div>
@@ -288,6 +335,64 @@
       <div class="swatches" id="lightSwatches"></div>
       <h3 class="appear-sub" data-i18n="darkTheme"></h3>
       <div class="swatches" id="darkSwatches"></div>
+    </div>
+  </div>
+
+  <!-- Orchard picker -->
+  <div class="sheet-backdrop" id="orchardSheet" hidden>
+    <div class="sheet" role="dialog" aria-modal="true">
+      <div class="sheet-grip"></div>
+      <div class="sheet-head">
+        <h2 data-i18n="orchard"></h2>
+        <button class="icon-btn" data-close aria-label="Close"><svg><use href="#i-x"/></svg></button>
+      </div>
+      <form id="orchardForm" novalidate>
+        <input class="text-input big-input" id="orchardInput" autocapitalize="characters" autocomplete="off" spellcheck="false" maxlength="24" data-i18n-ph="orchardPh">
+        <small class="field-hint warn" id="orchardWarn" hidden data-i18n="asciiOnly"></small>
+        <small class="field-hint" data-i18n="orchardRule"></small>
+        <div class="set-sub" id="recentTitle" data-i18n="recentOrchards"></div>
+        <div class="chip-row" id="recentOrchards"></div>
+        <div class="sheet-foot">
+          <button class="btn btn-ghost" type="button" data-close data-i18n="cancel"></button>
+          <button class="btn btn-primary" type="submit" data-i18n="saveWord"></button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Tree number / tree tag -->
+  <div class="sheet-backdrop" id="treeSheet" hidden>
+    <div class="sheet" role="dialog" aria-modal="true">
+      <div class="sheet-grip"></div>
+      <div class="sheet-head">
+        <h2 id="treeSheetTitle"></h2>
+        <button class="icon-btn" data-close aria-label="Close"><svg><use href="#i-x"/></svg></button>
+      </div>
+      <form id="treeForm" novalidate>
+        <input class="text-input big-input" id="treeInput" autocomplete="off" spellcheck="false">
+        <small class="field-hint warn" id="treeWarn" hidden data-i18n="asciiOnly"></small>
+        <small class="field-hint" id="treeHint"></small>
+        <div class="sheet-foot">
+          <button class="btn btn-ghost" type="button" data-close data-i18n="cancel"></button>
+          <button class="btn btn-primary" type="submit" data-i18n="confirm"></button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- New day: continue the tree count or start again -->
+  <div class="sheet-backdrop" id="daySheet" hidden>
+    <div class="sheet" role="dialog" aria-modal="true">
+      <div class="sheet-grip"></div>
+      <div class="wn-head">
+        <div class="wn-icon"><svg><use href="#i-tree"/></svg></div>
+        <h2 data-i18n="newDayTitle"></h2>
+        <div class="wn-date" id="dayText"></div>
+      </div>
+      <div class="day-actions">
+        <button class="btn btn-outline btn-block" id="dayContinue"></button>
+        <button class="btn btn-primary btn-block" id="dayRestart" data-i18n="startFrom1"></button>
+      </div>
     </div>
   </div>
 
@@ -373,7 +478,8 @@
         </form>
         <form id="nameForm" novalidate hidden>
           <div class="ob-step" id="nameStep"></div>
-          <input class="ob-input" id="nameInput" type="text" autocomplete="name" maxlength="40" data-i18n-ph="namePh">
+          <div class="onboard-notice" id="nameNotice" hidden data-i18n="nameAsciiNotice"></div>
+          <input class="ob-input" id="nameInput" autocapitalize="words" spellcheck="false" type="text" autocomplete="name" maxlength="40" data-i18n-ph="namePh">
           <div class="ob-help" data-i18n="nameDesc"></div>
           <div class="form-err"></div>
           <button class="ob-btn" id="nameSubmit" type="submit" data-i18n="start"></button>

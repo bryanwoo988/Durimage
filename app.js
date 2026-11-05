@@ -35,6 +35,12 @@
     appearance: store.get('appearance', 'system'), // 'system' | 'light' | 'dark'
     lightTheme: store.get('lightTheme', 'paper'),
     darkTheme: store.get('darkTheme', 'midnight'),
+    track: store.get('track', true),             // record orchard + tree
+    orchard: store.get('orchard', ''),
+    recentOrchards: store.get('recentOrchards', []),
+    trees: store.get('trees', {}),               // { ORCHARD: { mode: 'seq'|'tag', seq, tag, day } }
+    pcount: store.get('pcount', {}),             // photos per tree per day → the -pNN number
+    reviewSource: 'camera', reviewSnap: null,
     items: [],
     pending: [],
     reviewFolder: null,
@@ -153,10 +159,11 @@
     $('pwNotice').hidden = mode !== 'pwChanged';
     $('pwCancel').hidden = mode !== 'reenter';
     $('nameCancel').hidden = mode !== 'editName';
+    $('nameNotice').hidden = mode !== 'nameAscii';
     $('pwErr').textContent = '';
     $('pwInput').value = '';
     $('pwInput').classList.remove('bad');
-    $('nameInput').value = state.name || '';
+    $('nameInput').value = nonAscii(state.name) ? '' : (state.name || '');
     // No auto-focus on first launch: the keyboard would cover the intro. Focus only when re-entering.
     if (mode !== 'pw') setTimeout(() => (pwStep ? $('pwInput') : $('nameInput')).focus(), 50);
   }
@@ -171,6 +178,7 @@
   function needsOnboard() {
     if (!state.password) { showOnboard('pw'); return true; }
     if (!state.name) { showOnboard('name'); return true; }
+    if (nonAscii(state.name)) { showOnboard('nameAscii'); return true; } // file names are English-only
     return false;
   }
 
@@ -199,12 +207,13 @@
   });
   $('nameForm').addEventListener('submit', (e) => {
     e.preventDefault();
-    const name = $('nameInput').value.trim();
+    const name = $('nameInput').value.replace(/[^A-Za-z0-9 \-]/g, '').trim().replace(/\s+/g, ' ');
     if (!name) { $('nameInput').classList.remove('bad'); void $('nameInput').offsetWidth; $('nameInput').classList.add('bad'); return; }
     state.name = name; store.set('name', name);
     hideOnboard(); render(); processQueue();
   });
   $('pwCancel').onclick = hideOnboard;
+  asciiField($('nameInput'), null, false);
   $('nameCancel').onclick = hideOnboard;
 
   // ---------- Date helpers ----------
@@ -263,6 +272,7 @@
         <img src="${i.thumb}" alt="" loading="lazy">
         <div class="tile-folder">${esc(i.folderName)}</div>
         ${i.note ? '<div class="tile-note"><svg><use href="#i-note"/></svg></div>' : ''}
+        ${i.meta && i.meta.trainOnly ? `<div class="tile-train">${esc(t('trainOnlyShort'))}</div>` : ''}
         <div class="tile-badge b-${i.status}">${icon}<span>${t(i.status === 'error' ? 'retry' : i.status)}</span></div>
         <div class="tile-time">${esc(timeLabel(d))}</div>
       </button>`;
@@ -274,6 +284,7 @@
     renderAppearance();
     renderFolderList();
     renderHistory();
+    renderTree();
   }
 
   const folderChip = (f, on) => `<svg><use href="#i-folder-fill"/></svg><span class="name">${esc(f.name)}</span>
@@ -334,6 +345,269 @@
     if (rf) { state.reviewFolder = rf.dataset.rf; renderReviewFolders(); }
   });
 
+  // ---------- Orchard & tree ----------
+  // Everything that goes into a file name is plain English letters, digits and '-' ('_' separates fields).
+  const asciiClean = (v, max) => String(v || '').normalize('NFKD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/[_/\\.,:;|]+/g, '-').replace(/[^A-Za-z0-9 \-]/g, '').trim().replace(/\s+/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '').slice(0, max);
+  const cleanOrchard = (v) => asciiClean(v, 20).toUpperCase();
+  const cleanTag = (v) => asciiClean(v, 12).toUpperCase();
+  const cleanNameToken = (v) => asciiClean(v, 20);
+  const nonAscii = (v) => /[^\x20-\x7e]/.test(String(v || ''));
+  const pad2 = (n) => String(n).padStart(2, '0');
+  const dayKey = (d = new Date()) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+  const treeToken = (mode, seq, tag) => (mode === 'tag' ? (tag ? 'tag' + tag : 'tNA') : (seq ? 't' + pad2(seq) : 'tNA'));
+
+  function treeOf(o) {
+    if (!state.trees[o]) state.trees[o] = { mode: 'seq', seq: 1, tag: '', day: dayKey() };
+    return state.trees[o];
+  }
+  const saveTrees = () => store.set('trees', state.trees);
+  function setOrchard(o) {
+    state.orchard = o; store.set('orchard', o);
+    state.recentOrchards = [o, ...state.recentOrchards.filter((x) => x !== o)].slice(0, 10);
+    store.set('recentOrchards', state.recentOrchards);
+    const tr = treeOf(o);
+    // A new visit (another day) starts counting from tree 1 again; coming back the same day continues.
+    if (tr.mode === 'seq' && tr.day !== dayKey()) { tr.seq = 1; tr.day = dayKey(); }
+    saveTrees(); render();
+  }
+  // Next -pNN for this tree on this day (counted on this phone only).
+  function nextPhotoNo(orchard, token, day) {
+    const k = `${orchard || 'NA'}|${token}|${day}`;
+    const n = (state.pcount[k] || 0) + 1;
+    state.pcount[k] = n;
+    const keys = Object.keys(state.pcount);
+    if (keys.length > 600) keys.sort((a, b) => a.split('|')[2].localeCompare(b.split('|')[2])).slice(0, 200).forEach((x) => delete state.pcount[x]);
+    store.set('pcount', state.pcount);
+    return n;
+  }
+  // "B-12" → "B-13", "A-09" → "A-10"; no number at the end → unchanged
+  function nextTagGuess(tag) {
+    const m = String(tag || '').match(/^(.*?)(\d+)$/);
+    if (!m) return tag || '';
+    return cleanTag(m[1] + String(Number(m[2]) + 1).padStart(m[2].length, '0'));
+  }
+  function treeDisplay(o) {
+    const tr = treeOf(o);
+    return tr.mode === 'tag' ? (tr.tag || '') : t('treeN', { n: tr.seq });
+  }
+
+  // Live filter for typed fields: drops anything that is not a letter, digit, space or '-'.
+  function asciiField(input, warn, upper) {
+    const run = (e) => {
+      if (e && e.isComposing) return; // wait until a Chinese/IME word is finished, then strip it
+      const v = input.value;
+      let f = v.replace(/[_/\\.,:;|]/g, '-').replace(/[^A-Za-z0-9 \-]/g, '');
+      if (upper) f = f.toUpperCase();
+      if (f !== v) { input.value = f; }
+      if (warn) warn.hidden = !(nonAscii(v) || /[^A-Za-z0-9 \-_/\\.,:;|]/.test(v));
+    };
+    input.addEventListener('input', run);
+    input.addEventListener('compositionend', run);
+  }
+
+  function renderTree() {
+    const on = state.track;
+    $('treeCard').hidden = !on;
+    $('nextTreeBtn').hidden = !on;
+    $('foldersBtn').hidden = on; // the folder card above still opens the folder list
+    $('trackToggle').checked = on;
+    $('treeModeGroup').hidden = !on;
+    if (!on) return;
+    const o = state.orchard;
+    $('orchardValue').textContent = o || t('noOrchard');
+    $('orchardValue').classList.toggle('muted', !o);
+    const tr = o ? treeOf(o) : { mode: 'seq' };
+    $('treeLabel').textContent = t(tr.mode === 'tag' ? 'treeTagLabel' : 'treeSeq');
+    const tv = o ? treeDisplay(o) : '';
+    $('treeValue').textContent = tv || '—';
+    $('treeValue').classList.toggle('muted', !tv);
+    $('treeModeLabel').textContent = t('treeModeLabel', { o: o || '—' });
+    $('treeModeSeg').innerHTML = ['seq', 'tag'].map((m) =>
+      `<button type="button" data-tm="${m}" class="${o && tr.mode === m ? 'on' : ''}" ${o ? '' : 'disabled'}>${esc(t(m === 'seq' ? 'modeSeq' : 'modeTag'))}</button>`).join('');
+    $('treeModeDesc').textContent = !o ? t('modeNeedOrchard') : t(tr.mode === 'tag' ? 'modeTagDesc' : 'modeSeqDesc');
+  }
+
+  // Orchard sheet
+  let pendingCamera = false;
+  function openOrchardSheet() {
+    $('orchardInput').value = state.orchard || '';
+    $('orchardWarn').hidden = true;
+    const rec = state.recentOrchards;
+    $('recentTitle').hidden = !rec.length;
+    $('recentOrchards').innerHTML = rec.map((o) => `<button type="button" data-o="${esc(o)}" class="${o === state.orchard ? 'on' : ''}">${esc(o)}</button>`).join('');
+    openSheet('orchardSheet');
+  }
+  asciiField($('orchardInput'), $('orchardWarn'), true);
+  $('recentOrchards').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-o]'); if (!b) return;
+    $('orchardInput').value = b.dataset.o;
+    $('orchardForm').requestSubmit ? $('orchardForm').requestSubmit() : $('orchardForm').dispatchEvent(new Event('submit', { cancelable: true }));
+  });
+  $('orchardForm').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const v = cleanOrchard($('orchardInput').value);
+    if (!v) { $('orchardInput').classList.remove('bad'); void $('orchardInput').offsetWidth; $('orchardInput').classList.add('bad'); return; }
+    setOrchard(v);
+    closeSheet('orchardSheet');
+    maybeAskNewDay();
+    if (pendingCamera) { pendingCamera = false; $('cameraInput').click(); } // same tap → camera opens
+  });
+  $('orchardBtn').onclick = () => openOrchardSheet();
+
+  // Tree number / tag sheet
+  let treeSheetMode = 'seq';
+  function openTreeSheet(mode, value) {
+    treeSheetMode = mode;
+    const inp = $('treeInput');
+    inp.value = value == null ? '' : String(value);
+    inp.inputMode = mode === 'seq' ? 'numeric' : 'text';
+    inp.setAttribute('autocapitalize', mode === 'seq' ? 'off' : 'characters');
+    inp.maxLength = mode === 'seq' ? 4 : 14;
+    $('treeSheetTitle').textContent = t(mode === 'seq' ? 'editTreeTitle' : 'tagTitle');
+    $('treeHint').textContent = t(mode === 'seq' ? 'editTreeHint' : 'tagHint');
+    $('treeWarn').hidden = true;
+    openSheet('treeSheet');
+    setTimeout(() => { inp.focus(); inp.select(); }, 60);
+  }
+  $('treeInput').addEventListener('input', (e) => {
+    if (e.isComposing) return;
+    const inp = $('treeInput'), v = inp.value;
+    const f = treeSheetMode === 'seq' ? v.replace(/\D/g, '') : v.replace(/[_/\\.,:;|]/g, '-').replace(/[^A-Za-z0-9 \-]/g, '').toUpperCase();
+    if (f !== v) inp.value = f;
+    $('treeWarn').hidden = treeSheetMode === 'seq' || !(nonAscii(v) || /[^A-Za-z0-9 \-_]/.test(v));
+  });
+  $('treeForm').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const tr = treeOf(state.orchard), inp = $('treeInput');
+    const bad = () => { inp.classList.remove('bad'); void inp.offsetWidth; inp.classList.add('bad'); };
+    if (treeSheetMode === 'seq') {
+      const n = parseInt(inp.value, 10);
+      if (!(n >= 1 && n <= 9999)) return bad();
+      tr.seq = n;
+      toast(t('nowTree', { n }));
+    } else {
+      const v = cleanTag(inp.value);
+      if (!v) return bad();
+      tr.tag = v;
+      toast(t('nowTag', { t: v }));
+    }
+    tr.day = dayKey(); saveTrees();
+    closeSheet('treeSheet'); render();
+  });
+  $('treeBtn').onclick = () => {
+    if (!state.orchard) return openOrchardSheet();
+    const tr = treeOf(state.orchard);
+    openTreeSheet(tr.mode, tr.mode === 'seq' ? tr.seq : tr.tag);
+  };
+  $('nextTreeBtn').onclick = () => {
+    if (!state.orchard) { toast(t('needOrchard'), true); return openOrchardSheet(); }
+    const tr = treeOf(state.orchard);
+    if (tr.mode === 'seq') {
+      tr.seq += 1; tr.day = dayKey(); saveTrees(); render();
+      toast(t('nowTree', { n: tr.seq }));
+    } else {
+      openTreeSheet('tag', nextTagGuess(tr.tag));
+    }
+  };
+
+  // Settings: tracking switch + numbering mode for the current orchard
+  $('trackToggle').onchange = (e) => { state.track = e.target.checked; store.set('track', state.track); render(); };
+  $('treeModeSeg').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-tm]'); if (!b || !state.orchard) return;
+    const tr = treeOf(state.orchard); tr.mode = b.dataset.tm; saveTrees(); render();
+  });
+
+  // New day: continue the running number or start again from tree 1
+  function maybeAskNewDay() {
+    if (!state.track || !state.orchard || state.onboardMode) return;
+    const tr = treeOf(state.orchard);
+    if (tr.mode !== 'seq' || tr.day === dayKey()) return;
+    if (tr.seq <= 1) { tr.day = dayKey(); saveTrees(); return; }
+    $('dayText').textContent = t('dayText', { o: state.orchard, n: tr.seq });
+    $('dayContinue').textContent = t('continueN', { n: tr.seq });
+    openSheet('daySheet');
+  }
+  $('dayContinue').onclick = () => { const tr = treeOf(state.orchard); tr.day = dayKey(); saveTrees(); closeSheet('daySheet'); render(); };
+  $('dayRestart').onclick = () => { const tr = treeOf(state.orchard); tr.seq = 1; tr.day = dayKey(); saveTrees(); closeSheet('daySheet'); render(); };
+
+  // Shutter: an orchard must be set first (gallery uploads may leave it empty)
+  $('cameraInput').closest('label').addEventListener('click', (e) => {
+    if (e.target.id === 'cameraInput') return;
+    if (state.track && !state.orchard) { e.preventDefault(); pendingCamera = true; toast(t('needOrchard')); openOrchardSheet(); }
+  });
+
+  // Review sheet: orchard / tree part
+  asciiField($('rmOrchard'), null, true);
+  asciiField($('rmTree'), null, true);
+  function reviewMeta() {
+    if (!state.track) return null;
+    if (state.reviewSource === 'camera') return { ...state.reviewSnap, source: 'camera' };
+    if ($('oldToggle').checked) return { orchard: '', mode: 'seq', token: 'tNA', source: 'old' };
+    const o = cleanOrchard($('rmOrchard').value);
+    const tv = cleanTag($('rmTree').value);
+    const token = !tv ? 'tNA' : /^\d+$/.test(tv) ? 't' + pad2(parseInt(tv, 10)) : 'tag' + tv;
+    return { orchard: o, mode: /^tag/.test(token) ? 'tag' : 'seq', token, source: 'gallery' };
+  }
+  const isTrainOnly = (m) => !!m && (!m.orchard || m.token === 'tNA');
+  function renderReviewMeta() {
+    const on = state.track, cam = state.reviewSource === 'camera';
+    $('reviewMeta').hidden = !on;
+    if (!on) return;
+    $('rmCamera').hidden = !cam;
+    $('rmGallery').hidden = cam;
+    if (cam && state.reviewSnap) {
+      const sn = state.reviewSnap;
+      $('rmCameraText').textContent = `${sn.orchard} · ${sn.mode === 'tag' ? t('treeTagLabel') + ' ' + sn.token.slice(3) : t('treeN', { n: Number(sn.token.slice(1)) })}`;
+    }
+    $('rmFields').hidden = !cam && $('oldToggle').checked;
+    $('trainOnlyNote').hidden = !isTrainOnly(reviewMeta());
+  }
+  ['oldToggle', 'rmOrchard', 'rmTree'].forEach((id) => $(id).addEventListener(id === 'oldToggle' ? 'change' : 'input', renderReviewMeta));
+
+  // Photo's own capture time (EXIF DateTimeOriginal) for gallery uploads; JPEG only.
+  async function exifDate(file) {
+    try {
+      const v = new DataView(await file.slice(0, 262144).arrayBuffer());
+      if (v.getUint16(0) !== 0xFFD8) return null;
+      let o = 2;
+      while (o + 10 < v.byteLength) {
+        const marker = v.getUint16(o), len = v.getUint16(o + 2);
+        if (marker === 0xFFE1 && v.getUint32(o + 4) === 0x45786966) {
+          const b = o + 10, le = v.getUint16(b) === 0x4949;
+          const u16 = (q) => v.getUint16(b + q, le), u32 = (q) => v.getUint32(b + q, le);
+          const ifd = (off) => { const n = u16(off), out = {}; for (let i = 0; i < n; i++) { const e = off + 2 + i * 12; out[u16(e)] = { count: u32(e + 4), at: e + 8 }; } return out; };
+          const str = (en) => { if (!en) return null; const off = en.count > 4 ? u32(en.at) : en.at; let r = ''; for (let i = 0; i < en.count - 1; i++) r += String.fromCharCode(v.getUint8(b + off + i)); return r; };
+          const i0 = ifd(u32(4));
+          let txt = null;
+          if (i0[0x8769]) { const ex = ifd(u32(i0[0x8769].at)); txt = str(ex[0x9003]) || str(ex[0x9004]); }
+          txt = txt || str(i0[0x0132]);
+          const m = txt && txt.match(/^(\d{4}):(\d{2}):(\d{2}) (\d{2}):(\d{2}):(\d{2})/);
+          if (!m || m[1] === '0000') return null;
+          const d = new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6]);
+          return isNaN(d) ? null : d;
+        }
+        if ((marker & 0xFF00) !== 0xFF00) break;
+        o += 2 + len;
+      }
+    } catch {}
+    return null;
+  }
+  async function captureTime(file, source) {
+    if (source === 'camera') return { date: new Date(), src: 'camera' };
+    const ex = await exifDate(file);
+    if (ex) return { date: ex, src: 'exif' };
+    if (file.lastModified && Math.abs(Date.now() - file.lastModified) > 10 * 60 * 1000) return { date: new Date(file.lastModified), src: 'file' };
+    return { date: new Date(), src: 'upload' };
+  }
+  // Fingerprint of the original, used to skip photos that were already uploaded.
+  async function sha256(blob) {
+    try {
+      const h = await crypto.subtle.digest('SHA-256', await blob.arrayBuffer());
+      return [...new Uint8Array(h)].map((x) => x.toString(16).padStart(2, '0')).join('');
+    } catch { return null; }
+  }
+
   // ---------- Capture flow ----------
   function onFiles(e) {
     const files = [...e.target.files].filter((f) => f.type.startsWith('image/') || /\.(heic|heif)$/i.test(f.name));
@@ -342,6 +616,11 @@
     if (needsOnboard()) return;
     state.pending = files;
     state.reviewFolder = state.currentFolder;
+    // Orchard + tree are fixed at the moment the photo comes back from the camera.
+    state.reviewSource = e.target.id === 'cameraInput' ? 'camera' : 'gallery';
+    state.reviewSnap = state.track && state.orchard ? (() => { const tr = treeOf(state.orchard); return { orchard: state.orchard, mode: tr.mode, token: treeToken(tr.mode, tr.seq, tr.tag) }; })() : null;
+    if (state.reviewSource === 'camera' && state.track && !state.orchard) { state.reviewSource = 'gallery'; } // safety: never label a camera photo with no orchard
+    $('oldToggle').checked = false; $('rmOrchard').value = ''; $('rmTree').value = '';
     const strip = $('reviewStrip');
     strip.innerHTML = '';
     for (const f of files) {
@@ -352,6 +631,7 @@
     $('reviewCount').textContent = t('photosCount', { n: files.length });
     $('noteInput').value = '';
     renderReviewFolders();
+    renderReviewMeta();
     openSheet('reviewSheet');
     captureGps();
   }
@@ -406,11 +686,16 @@
   }
 
   const pad = (n) => String(n).padStart(2, '0');
-  const clean = (s, n) => s.replace(/[\\/:*?"<>|]+/g, '').replace(/\s+/g, '-').slice(0, n);
-  function fileName(date, folderName, ext, id) {
-    const d = `${date.getFullYear()}${pad(date.getMonth() + 1)}${pad(date.getDate())}_${pad(date.getHours())}${pad(date.getMinutes())}${pad(date.getSeconds())}`;
-    // Short id makes every name unique, which the backend uses to skip duplicate retries.
-    return `durian_${clean(folderName, 40)}_${d}_${clean(state.name, 20)}_${id.slice(0, 6)}.${ext}`;
+  const stamp = (d) => `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}_${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
+  // English-only file name. With orchard/tree:  durian_<folder>_<ORCHARD>_<t03|tagB-12|tNA>-p02_<date_time>_<name>_<id>.jpg
+  // Without (setting off):                       durian_<folder>_<date_time>_<name>_<id>.jpg
+  // The 6-character id makes every name unique; the backend uses that to skip duplicate retries.
+  function fileName(date, folder, ext, id, meta, photoNo) {
+    const folderTok = asciiClean(folder.name, 20) || 'F' + String(folder.id).replace(/[^A-Za-z0-9]/g, '').slice(0, 6);
+    const parts = ['durian', folderTok];
+    if (meta) parts.push(meta.orchard || 'NA', `${meta.token}-p${pad(photoNo)}`);
+    parts.push(stamp(date), cleanNameToken(state.name) || 'NA', id.slice(0, 6));
+    return parts.join('_') + '.' + (/^[a-z0-9]{2,5}$/.test(ext) ? ext : 'jpg');
   }
 
   $('saveBtn').onclick = async () => {
@@ -423,14 +708,23 @@
     closeSheet('reviewSheet');
 
     const now = new Date();
-    const description = [
+    const baseMeta = reviewMeta();
+    const source = state.reviewSource;
+    if (source === 'camera' && baseMeta && baseMeta.orchard) { const tr = treeOf(baseMeta.orchard); tr.day = dayKey(); saveTrees(); }
+    const describe = (cap, meta, tree) => [
       note,
       `Photographer: ${state.name}`,
-      `Captured: ${now.toISOString()}`,
-      pos ? `GPS: ${pos.lat.toFixed(6)}, ${pos.lng.toFixed(6)} (±${pos.acc} m)` : '',
-      pos ? `Map: https://maps.google.com/?q=${pos.lat.toFixed(6)},${pos.lng.toFixed(6)}` : '',
+      `Captured: ${cap.date.toISOString()}${cap.src === 'upload' ? ' (unknown, this is the upload time)' : cap.src === 'file' ? ' (file time)' : ''}`,
+      meta ? `Orchard: ${meta.orchard || 'NA'}` : '',
+      meta ? `Tree: ${tree}` : '',
+      meta ? `Source: ${meta.source === 'old' ? 'gallery-old' : meta.source}` : '',
+      meta ? `Use: ${isTrainOnly(meta) ? 'train-only' : 'train+test'}` : '',
+      pos && source === 'camera' ? `GPS: ${pos.lat.toFixed(6)}, ${pos.lng.toFixed(6)} (±${pos.acc} m)` : '',
+      pos && source === 'camera' ? `Map: https://maps.google.com/?q=${pos.lat.toFixed(6)},${pos.lng.toFixed(6)}` : '',
       'Source: Durimage',
     ].filter(Boolean).join('\n');
+    let skipped = 0;
+    const seenHashes = new Set(state.items.map((x) => x.sha256).filter(Boolean));
 
     let saved = 0;
     try {
@@ -438,12 +732,25 @@
       const id = crypto.randomUUID ? crypto.randomUUID().replace(/-/g, '') : (Date.now().toString(36) + Math.random().toString(36).slice(2));
       const f = files[i];
       const ext = ((f.name.match(/\.([a-z0-9]+)$/i) || [])[1] || 'jpg').toLowerCase();
+      const hash = await sha256(f);
+      if (hash && seenHashes.has(hash)) { skipped++; continue; } // same photo already on this phone
+      if (hash) seenHashes.add(hash);
+      const cap = await captureTime(f, source);
+      if (source !== 'camera' && files.length > 1 && cap.src === 'upload') cap.date = new Date(now.getTime() + i * 1000);
+      const meta = baseMeta ? { ...baseMeta } : null;
+      let tree = '', photoNo = 0;
+      if (meta) {
+        photoNo = nextPhotoNo(meta.orchard, meta.token, dayKey(cap.date));
+        tree = `${meta.token}-p${pad(photoNo)}`;
+        meta.tree = tree; meta.trainOnly = isTrainOnly(meta);
+      }
       const item = {
         id, createdAt: Date.now() + i, status: 'queued',
         folderId: folder.id, folderName: folder.name,
-        name: fileName(new Date(now.getTime() + i * 1000), folder.name, ext, id),
-        mime: f.type || 'image/jpeg', size: f.size, description, note, thumb: await makeThumb(f),
-        capturedAt: now.toISOString(), pos: pos || null, by: state.name,
+        name: fileName(cap.date, folder, ext, id, meta, photoNo),
+        mime: f.type || 'image/jpeg', size: f.size, description: describe(cap, meta, tree), note, thumb: await makeThumb(f),
+        capturedAt: cap.date.toISOString(), capSrc: cap.src, pos: source === 'camera' ? (pos || null) : null, by: state.name,
+        meta, sha256: hash,
       };
       await putBlob(id, f); // the untouched original
       const preview = await makePreview(f);
@@ -462,8 +769,9 @@
     }
     resetReview(files);
     render();
+    if (skipped) toast(t('dupSkipped', { n: skipped }));
     try { navigator.storage && navigator.storage.persist && navigator.storage.persist(); } catch {}
-    toast(t(navigator.onLine ? 'savedQueued' : 'savedOffline', { n: files.length }));
+    if (!skipped) toast(t(navigator.onLine ? 'savedQueued' : 'savedOffline', { n: files.length }));
     processQueue();
   };
 
@@ -486,7 +794,7 @@
     const ses = await api({
       action: 'session', key: state.password, origin: location.origin,
       folderId: item.folderId, name: item.name, mimeType: item.mime, size: blob.size,
-      description: item.description,
+      description: item.description, sha256: item.sha256 || '', props: driveProps(item),
     });
     if (!ses.ok || ses.duplicate) return ses;
 
@@ -510,13 +818,20 @@
         action: 'upload', key: state.password,
         folderId: item.folderId, name, mimeType: 'image/jpeg',
         description: item.description + '\n(Compressed copy: original upload not supported on this device)',
-        data: await toBase64(small),
+        data: await toBase64(small), sha256: item.sha256 || '', props: driveProps(item),
       });
       return { ...r, compressed: true, name };
     }
   }
 
-  // Only photos with a note get a row in the Google Sheet (newest row on top).
+  // Machine-readable fields stored on the Drive file (searchable later without parsing file names).
+  const driveProps = (item) => {
+    const m = item.meta;
+    return Object.assign({}, item.sha256 ? { sha256: item.sha256 } : {},
+      m ? { orchard: m.orchard || 'NA', tree: m.tree, source: m.source, use: m.trainOnly ? 'train-only' : 'train+test' } : {});
+  };
+  // Photos with a note, and photos that can only be used for training, get a row in the Sheet (newest on top).
+  const needsSheetRow = (item) => !!item.note || !!(item.meta && item.meta.trainOnly);
   const logRow = (item) => ({
     action: 'log', key: state.password,
     folderId: item.folderId, folderName: item.folderName,
@@ -526,6 +841,8 @@
     lat: item.pos ? item.pos.lat : null, lng: item.pos ? item.pos.lng : null, acc: item.pos ? item.pos.acc : null,
     quality: item.compressed ? 'compressed' : 'original',
     tz: Intl.DateTimeFormat().resolvedOptions().timeZone,
+    orchard: item.meta ? (item.meta.orchard || 'NA') : '', tree: item.meta ? item.meta.tree : '',
+    source: item.meta ? item.meta.source : '', trainOnly: !!(item.meta && item.meta.trainOnly), meta: !!item.meta,
   });
 
   const CONCURRENCY = 3; // photos sent at the same time
@@ -542,10 +859,11 @@
         res = await uploadOne(item);
         if (res.ok) {
           item.driveId = res.id; item.compressed = !!res.compressed; if (res.name) item.uploadedName = res.name;
+          if (res.dupHash) { item.duplicate = true; item.logged = true; } // same photo already in Drive: nothing new to save or log
           await putItem(item); await delBlob(item.id);
         }
       }
-      if (res.ok && item.note && !item.logged) {
+      if (res.ok && needsSheetRow(item) && !item.logged) {
         res = await api(logRow(item));
         if (res.ok) item.logged = true;
       }
@@ -649,13 +967,22 @@
     const pos = item.pos;
     const rows = [
       ['fFolder', esc(item.folderName)],
-      ['fTime', esc(d.toLocaleString(LOCALE(), { dateStyle: 'medium', timeStyle: 'short' }))],
+      ['fTime', esc(d.toLocaleString(LOCALE(), { dateStyle: 'medium', timeStyle: 'short' })) + (item.capSrc === 'upload' ? `<br><span class="muted">${esc(t('timeUnknown'))}</span>` : '')],
       ['fBy', esc(item.by || (item.description.match(/^Photographer: (.*)$/m) || [])[1] || '')],
       ['fNote', item.note ? esc(item.note).replace(/\n/g, '<br>') : `<span class="muted">${esc(t('noNote'))}</span>`],
       ['fGps', pos ? `${pos.lat.toFixed(5)}, ${pos.lng.toFixed(5)} (±${pos.acc} m)<br><a href="https://maps.google.com/?q=${pos.lat},${pos.lng}" target="_blank" rel="noopener">${esc(t('openMap'))}</a>` : `<span class="muted">${esc(t('noGps'))}</span>`],
       ['fFile', `<span class="mono">${esc(item.uploadedName || item.name)}</span>`],
     ];
-    if (item.status === 'done') rows.push(['fQuality', esc(t(item.compressed ? 'qCompressed' : 'qOriginal'))]);
+    if (item.meta) {
+      const m = item.meta;
+      const reason = !m.orchard && m.token === 'tNA' ? 'reasonBoth' : !m.orchard ? 'reasonOrchard' : 'reasonTree';
+      rows.splice(1, 0,
+        ['fOrchard', esc(m.orchard || 'NA')],
+        ['fTree', `<span class="mono">${esc(m.tree)}</span>`]);
+      rows.push(['fSource', esc(t(m.source === 'old' ? 'srcOld' : m.source === 'gallery' ? 'srcGallery' : 'srcCamera'))]);
+      rows.push(['fUse', m.trainOnly ? `<b>${esc(t('useTrain', { r: t(reason) }))}</b>` : esc(t('useBoth'))]);
+    }
+    if (item.status === 'done') rows.push(['fQuality', esc(t(item.duplicate ? 'qDuplicate' : item.compressed ? 'qCompressed' : 'qOriginal'))]);
     $('detailList').innerHTML = rows.map(([k, v]) => `<div><dt>${esc(t(k))}</dt><dd>${v}</dd></div>`).join('');
     const canAct = item.status !== 'done' && item.status !== 'uploading';
     $('detailFoot').hidden = !canAct;
@@ -836,7 +1163,7 @@
 
   window.addEventListener('online', () => { render(); processQueue(); });
   window.addEventListener('offline', render);
-  document.addEventListener('visibilitychange', () => { if (!document.hidden) { setAppHeight(); processQueue(); checkForUpdate(false); maybeReload(); } });
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) { setAppHeight(); maybeAskNewDay(); processQueue(); checkForUpdate(false); maybeReload(); } });
 
   // iPhone home-screen apps: after the keyboard closes, the window can stay shrunk (bottom bar
   // floats up, strip at the bottom). Scrolling back to the top once the last field loses focus
@@ -894,7 +1221,7 @@
     applyTheme();
     applyI18n();
     if (!needsOnboard()) { refreshFolders(false); processQueue(); }
-    if (!state.onboardMode) maybeShowWhatsNew();
+    if (!state.onboardMode) { maybeShowWhatsNew(); maybeAskNewDay(); }
     setupServiceWorker();
     hideSplash();
     setAppHeight(); nudgeViewport();

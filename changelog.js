@@ -3,6 +3,15 @@
 // date = the real release time in UTC (the moment it is pushed), e.g. from `date -u +%Y-%m-%dT%H:%M:%SZ`.
 window.DURIMAGE_CHANGELOG = [
   {
+    version: '1.4.0',
+    date: '2026-11-05T00:48:34Z',
+    notes: {
+      zh: ['新增「果园」和「树号」：写进文件名，以后可以按树分训练和测试', '首页有「下一棵树」按钮；支持流水号和树牌号码两种编号方式', '从相册上传旧照片：果园和树号选填，不知道就标成 NA（仅用于训练集）', '文件名改成只用英文；名字请改用英文或拼音', '同一张照片不会重复上传；有注解或仅训练集的照片会记录到 Google Sheet'],
+      en: ['New: orchard and tree number, written into file names so training and test sets can be split by tree', 'Next tree button on the home screen; running numbers or tree tags', 'Old gallery photos: orchard and tree are optional; unknown is marked NA (training only)', 'File names are now English-only; please use an English name', 'The same photo is never uploaded twice; photos with a note or for training only are logged in the Google Sheet'],
+      ms: ['Baharu: kebun dan nombor pokok dalam nama fail, supaya set latihan dan ujian boleh dipisah ikut pokok', 'Butang Pokok seterusnya pada skrin utama; nombor berjujukan atau tag pokok', 'Foto lama dari galeri: kebun dan pokok pilihan; tidak tahu ditanda NA (latihan sahaja)', 'Nama fail kini dalam huruf Inggeris sahaja; sila guna nama Inggeris', 'Foto yang sama tidak dimuat naik dua kali; foto bernota atau latihan sahaja direkod dalam Google Sheet'],
+    },
+  },
+  {
     version: '1.3.3',
     date: '2026-11-04T15:41:32Z',
     notes: {
