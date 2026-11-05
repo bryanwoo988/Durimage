@@ -73,7 +73,7 @@
     $('nameStep').textContent = t('step', { n: 2 }) + ' · ' + t('nameTitle');
     render();
   }
-  function setLang(code) { state.lang = code; store.set('lang', code); applyI18n(); }
+  function setLang(code) { state.lang = code; store.set('lang', code); applyI18n(); if ($('myMarkBtn')) renderMyMarkBtn(); }
   function cycleLang() {
     const codes = Object.keys(I18N);
     setLang(codes[(codes.indexOf(state.lang) + 1) % codes.length]);
@@ -677,6 +677,8 @@
     if (state.reviewSource === 'camera' && state.track && !state.orchard) { state.reviewSource = 'gallery'; } // safety: never label a camera photo with no orchard
     $('oldToggle').checked = false; $('rmOrchard').value = ''; $('rmTree').value = '';
     saveJudge.set(null);
+    state.pendingMarks = [];
+    renderMyMarkBtn();
     $('sendToggle').checked = store.get('sendDefault', false);
     const strip = $('reviewStrip');
     strip.innerHTML = '';
@@ -790,7 +792,9 @@
     const files = state.pending;
     const note = $('noteInput').value.trim();
     const pos = gpsFix(); // best recent fix at the moment of saving
-    const judge = saveJudge.isEmpty() ? null : saveJudge.get();
+    let judge = saveJudge.isEmpty() ? null : saveJudge.get();
+    const myMarks = files.length === 1 ? (state.pendingMarks || []) : [];
+    if (myMarks.length) judge = { ...(judge || { labels: [], text: '', confident: true }), marks: myMarks };
     const send = $('sendToggle').checked;
     store.set('sendDefault', send);
     setCurrentFolder(folder.id);
@@ -1110,12 +1114,14 @@
     const sw = (m) => Math.max(1.5, (MARK_W[m.w] || MARK_W[2]) * cw);
     const P = (q) => `${(q[0] * cw).toFixed(1)},${(q[1] * ch).toFixed(1)}`;
     const out = [];
-    (marks || []).forEach((m, i) => {
+    let num = 0;
+    (marks || []).forEach((m) => {
       if (!m.p || !m.p.length) return;
       const col = esc(m.col || '#e53935'), w = sw(m);
+      const i = m.d ? -1 : num++; // photographer's marks (m.d) are dashed and not numbered
       const a = m.p[0], b = m.p[m.p.length - 1];
       const x1 = Math.min(a[0], b[0]) * cw, y1 = Math.min(a[1], b[1]) * ch, x2 = Math.max(a[0], b[0]) * cw, y2 = Math.max(a[1], b[1]) * ch;
-      const base = `fill="none" stroke="${col}" stroke-width="${w}" stroke-linecap="round" stroke-linejoin="round"`;
+      const base = `fill="none" stroke="${col}" stroke-width="${w}" stroke-linecap="round" stroke-linejoin="round"${m.d ? ` stroke-dasharray="${(w * 2.6).toFixed(1)} ${(w * 1.9).toFixed(1)}"` : ''}`;
       if (m.t === 'pen') out.push(`<polyline points="${m.p.map(P).join(' ')}" ${base}/>`);
       else if (m.t === 'ellipse') out.push(`<ellipse cx="${(x1 + x2) / 2}" cy="${(y1 + y2) / 2}" rx="${(x2 - x1) / 2}" ry="${(y2 - y1) / 2}" ${base}/>`);
       else if (m.t === 'rect') out.push(`<rect x="${x1}" y="${y1}" width="${x2 - x1}" height="${y2 - y1}" ${base}/>`);
@@ -1123,7 +1129,7 @@
         const ax = a[0] * cw, ay = a[1] * ch, bx = b[0] * cw, by = b[1] * ch, ang = Math.atan2(by - ay, bx - ax), hl = Math.max(10, w * 4);
         out.push(`<line x1="${ax}" y1="${ay}" x2="${bx}" y2="${by}" ${base}/><polyline points="${bx - hl * Math.cos(ang - 0.5)},${by - hl * Math.sin(ang - 0.5)} ${bx},${by} ${bx - hl * Math.cos(ang + 0.5)},${by - hl * Math.sin(ang + 0.5)}" ${base}/>`);
       }
-      if (!opts.noLabels) { // number badge at the start of the mark (matches the list under the photo)
+      if (!opts.noLabels && i >= 0) { // number badge at the start of the mark (matches the list under the photo)
         const r = Math.max(9, cw * 0.022), lx = (m.t === 'pen' || m.t === 'arrow' ? a[0] * cw : x1), ly = (m.t === 'pen' || m.t === 'arrow' ? a[1] * ch : y1);
         out.push(`<circle cx="${lx}" cy="${ly}" r="${r}" fill="${col}" stroke="#fff" stroke-width="${r * 0.18}"/><text x="${lx}" y="${ly}" fill="#fff" font-size="${r * 1.15}" font-weight="800" text-anchor="middle" dominant-baseline="central" font-family="sans-serif">${i + 1}</text>`);
       }
@@ -1304,6 +1310,17 @@
     return w;
   }
   const saveJudge = judgeWidget($('saveJudge'));
+  function renderMyMarkBtn() {
+    const one = (state.pending || []).length === 1, n = (state.pendingMarks || []).length;
+    $('myMarkBtn').disabled = !one;
+    $('myMarkText').textContent = n ? t('myMarksN', { n }) : t('markMine');
+    $('myMarkHint').hidden = one;
+  }
+  $('myMarkBtn').onclick = () => {
+    const im = $('reviewStrip').querySelector('img');
+    if (!im || (state.pending || []).length !== 1) return;
+    openEditor(im.src, state.pendingMarks || [], (m) => { state.pendingMarks = m; renderMyMarkBtn(); }, saveJudge.get().labels);
+  };
   const editJudge = judgeWidget($('editJudge'));
   const rvJudge = judgeWidget($('rvJudge'), { title: 'reviewJudge', conf: false });
 
@@ -1312,8 +1329,9 @@
     id: i.id, fileId: i.driveId, name: i.uploadedName || i.name, folder: i.folderName,
     orchard: i.meta ? (i.meta.orchard || 'NA') : '', tree: i.meta ? i.meta.tree : '', capturedAt: i.capturedAt, by: i.by || state.name,
     labels: (i.judge && i.judge.labels) || [], labelText: (i.judge && i.judge.text) || '', confident: !i.judge || i.judge.confident !== false,
-    note: i.note || '', thumb: i.thumb,
+    note: i.note || '', thumb: i.thumb, marks: roundMarks((i.judge && i.judge.marks) || []),
   });
+  const roundMarks = (marks) => (marks || []).filter((m) => m && m.p && m.p.length).map((m) => ({ t: m.t, c: m.c, col: m.col, w: m.w, p: m.p.map((q) => [Math.round(q[0] * 10000) / 10000, Math.round(q[1] * 10000) / 10000]) }));
   let flushing = false;
   // Photos marked "send for review" go out as soon as they are in Drive (offline → later).
   async function flushSubmissions() {
@@ -1361,15 +1379,28 @@
     const st = !sub ? '' : !sub.done ? `<span class="state-tag todo">${esc(t('subQueued'))}</span>` : `<span class="state-tag done">${esc(t('submittedAt', { d: fmtDateTime(sub.at || item.createdAt) }))}</span>`;
     box.innerHTML = `<div class="judge-view"><div class="jv-head"><b>${esc(t('myJudgement'))}</b>${st}</div>
       ${lblsHtml(j && j.labels, j && j.text, j ? j.confident : undefined)}
-      <div class="jv-actions"><button class="btn btn-small btn-outline" id="djEdit">${esc(t('editJudge'))}</button>
+      ${j && (j.marks || []).length ? `<button class="btn btn-small btn-ghost dj-view" id="djView">${esc(t('viewMyMarks', { n: j.marks.length }))}</button>` : ''}
+      <div class="jv-actions"><button class="btn btn-small btn-outline" id="djEdit">${esc(t('editJudge'))}</button><button class="btn btn-small btn-outline" id="djMark"><svg><use href="#i-pen"/></svg>${esc(t('markMineShort'))}</button>
       ${!sub || sub.done ? `<button class="btn btn-small btn-primary" id="djSend">${esc(t(sub && sub.done ? 'resend' : 'sendToReview'))}</button>` : ''}</div></div>`;
     $('djEdit').onclick = () => { editJudge.set(item.judge); openSheet('judgeSheet'); };
+    const photo = async () => { const b = (await getBlob(item.id + '_p')) || (await getBlob(item.id)); return b ? URL.createObjectURL(b) : item.thumb; };
+    if ($('djView')) $('djView').onclick = async () => { const u = await photo(); openViewer(u, u.startsWith('blob:') ? u : null, asRef(item.judge.marks)); };
+    $('djMark').onclick = async () => {
+      const u = await photo();
+      openEditor(u, (item.judge && item.judge.marks) || [], async (m) => {
+        item.judge = { ...(item.judge || { labels: [], text: '', confident: true }), marks: m };
+        if (item.sub && item.sub.done) item.sub = { want: true, done: false }; // already sent → send the update
+        await putItem(item); renderDetailJudge(item); render(); flushSubmissions();
+        if (u.startsWith('blob:')) URL.revokeObjectURL(u);
+      }, (item.judge && item.judge.labels) || []);
+    };
     const sendBtn = $('djSend');
     if (sendBtn) sendBtn.onclick = async () => { await markForReview([item]); toast(t('sentN', { n: 1 })); renderDetailJudge(item); render(); flushSubmissions(); };
   }
   async function saveJudgeEdit(send) {
     const item = state.items.find((i) => i.id === detailId); if (!item) return;
-    item.judge = editJudge.isEmpty() ? null : editJudge.get();
+    const keepMarks = (item.judge && item.judge.marks) || [];
+    item.judge = editJudge.isEmpty() && !keepMarks.length ? null : { ...editJudge.get(), marks: keepMarks };
     if (send || (item.sub && item.sub.done)) item.sub = { want: true, done: false }; // already sent → send the update too
     await putItem(item); closeSheet('judgeSheet');
     renderDetailJudge(item); render(); flushSubmissions();
@@ -1398,7 +1429,7 @@
       const r = latestPer(list).find((x) => x.reviewer === b.dataset.marks);
       const blob = (await getBlob(item.id + '_p')) || (await getBlob(item.id));
       const u = blob ? URL.createObjectURL(blob) : item.thumb;
-      openViewer(u, blob ? u : null, r ? r.marks : []);
+      openViewer(u, blob ? u : null, [...asRef(item.judge && item.judge.marks), ...(r ? r.marks : [])]);
     });
   }
 
@@ -1629,6 +1660,8 @@
 
   // ---------- Reviewing one photo ----------
   let rv = { sub: null, src: null, marks: [], verdict: null };
+  let rvShowSub = true; // photographer's marks visible to the reviewer (can be switched off to look without bias)
+  const rvRef = () => (rvShowSub && rv.sub ? rv.sub.marks || [] : []);
   async function photoUrl(s) {
     if (imgCache.has(s.fileId)) return imgCache.get(s.fileId);
     const local = state.items.find((i) => i.id === s.id); // admin's own photo: already on this phone
@@ -1646,7 +1679,7 @@
     if (!im.naturalWidth) return;
     const svg = $('rvSvg');
     Object.assign(svg.style, { left: im.offsetLeft + 'px', top: im.offsetTop + 'px', width: im.offsetWidth + 'px', height: im.offsetHeight + 'px', inset: 'auto' });
-    renderMarks(svg, rv.marks, im.offsetWidth, im.offsetHeight);
+    renderMarks(svg, [...asRef(rvRef()), ...rv.marks], im.offsetWidth, im.offsetHeight);
     $('rvDrawText').textContent = rv.marks.length ? t('editMarks', { n: rv.marks.length }) : t('drawMarks');
   }
   function setVerdict(v) {
@@ -1661,10 +1694,13 @@
     const tree = s.tree ? treeLabelOf(String(s.tree).replace(/-p\d+$/, '')) + ` (${s.tree})` : '';
     $('rvInfo').innerHTML = [['fBy', s.by], ['fOrchard', s.orchard], ['fTree', tree], ['fTime', fmtDateTime(s.capturedAt || s.submittedAt)], ['fFolder', s.folder], ['flNote', s.note], ['fFile', s.name]]
       .filter(([, v]) => v).map(([k, v]) => `<div><dt>${esc(t(k))}</dt><dd>${esc(v)}</dd></div>`).join('');
-    $('rvSubmitter').innerHTML = `<div class="judge-view"><div class="jv-head"><b>${esc(t('submitterJudge', { n: s.by }))}</b></div>${lblsHtml(s.labels, s.labelText, s.confident)}</div>`;
+    const subMarks = s.marks || [];
+    $('rvSubmitter').innerHTML = `<div class="judge-view"><div class="jv-head"><b>${esc(t('submitterJudge', { n: s.by }))}</b></div>${lblsHtml(s.labels, s.labelText, s.confident)}
+      ${subMarks.length ? `<label class="rm-old sub-marks"><div><div class="set-title">${esc(t('showSubMarks'))}</div><div class="set-desc">${esc(t('subMarksN', { n: subMarks.length }))}</div></div><span class="switch"><input type="checkbox" id="rvShowSub" ${rvShowSub ? 'checked' : ''}><span></span></span></label>` : ''}</div>`;
+    if ($('rvShowSub')) $('rvShowSub').onchange = (e) => { rvShowSub = e.target.checked; drawRvMarks(); };
     // admin sees every expert; a reviewer never sees the others
     $('rvOthers').innerHTML = revIsAdmin() && (s.reviews || []).length ? `<div class="set-sub">${esc(t('expertReviews', { n: latestPer(s.reviews).length }))}</div>${reviewCards(s.reviews)}` : '';
-    $('rvOthers').querySelectorAll('[data-marks]').forEach((b) => b.onclick = async () => { const r = latestPer(s.reviews).find((x) => x.reviewer === b.dataset.marks); openViewer(await photoUrl(s), null, r ? r.marks : []); });
+    $('rvOthers').querySelectorAll('[data-marks]').forEach((b) => b.onclick = async () => { const r = latestPer(s.reviews).find((x) => x.reviewer === b.dataset.marks); openViewer(await photoUrl(s), null, [...asRef(s.marks), ...(r ? r.marks : [])]); });
     const prev = latestPer(mine(s))[0];
     $('rvPrev').hidden = !prev;
     if (prev) $('rvPrev').textContent = t('yourPrev', { v: prev.version || 1, d: fmtDateTime(prev.at) });
@@ -1690,8 +1726,8 @@
     const same = [...j.labels].sort().join('|') === [...(s.labels || [])].sort().join('|') && j.text === (s.labelText || '');
     setVerdict(same ? 'agree' : 'correct');
   };
-  $('rvImgBox').onclick = () => { if (rv.src) openViewer(rv.src, null, rv.marks); };
-  $('rvDraw').onclick = () => { if (rv.src) openEditor(rv.src, rv.marks, (m) => { rv.marks = m; drawRvMarks(); }, rvJudge.get().labels); };
+  $('rvImgBox').onclick = () => { if (rv.src) openViewer(rv.src, null, [...asRef(rvRef()), ...rv.marks]); };
+  $('rvDraw').onclick = () => { if (rv.src) openEditor(rv.src, rv.marks, (m) => { rv.marks = m; drawRvMarks(); }, rvJudge.get().labels, rvRef()); };
   $('rvSubmit').onclick = async () => {
     if (!rv.verdict) { toast(t('pickVerdict'), true); return; }
     if (!navigator.onLine) { toast(t('revNeedNet'), true); return; }
@@ -1712,10 +1748,12 @@
   };
 
   // ---------- Drawing editor ----------
-  const me = { marks: [], hist: [], fut: [], tool: 'ellipse', w: 2, cat: '', col: '#e53935', mode: 'draw', cur: null, hidden: false, cb: null, start: '' };
+  const me = { marks: [], hist: [], fut: [], tool: 'ellipse', w: 2, cat: '', col: '#e53935', mode: 'draw', cur: null, hidden: false, cb: null, start: '', ref: [] };
+  const asRef = (marks) => (marks || []).map((m) => ({ ...m, d: 1 })); // shown dashed, not editable
+
   const mez = makeZoomer($('meStage'), $('meLayer'), { noDoubleTap: true, claim: () => me.mode === 'draw', onFit: () => meRender() });
   function meRender() {
-    renderMarks($('meSvg'), me.hidden ? [] : [...me.marks, me.cur].filter(Boolean), mez.cw, mez.ch);
+    renderMarks($('meSvg'), me.hidden ? [] : [...asRef(me.ref), ...me.marks, me.cur].filter(Boolean), mez.cw, mez.ch);
     $('meList').innerHTML = me.marks.length ? me.marks.map((m, i) => `<span><b style="background:${esc(m.col)}">${i + 1}</b>${esc(m.c ? catName(m.c) : t('markOther'))}<button type="button" data-del="${i}">✕</button></span>`).join('') : `<span class="me-empty">${esc(t('meHint'))}</span>`;
     $('meUndo').disabled = !me.hist.length; $('meRedo').disabled = !me.fut.length;
     $$('#meTools [data-t]').forEach((b) => b.classList.toggle('on', b.dataset.t === me.tool));
@@ -1725,8 +1763,9 @@
     $('meColorDot').style.background = me.col; $('meColor').value = me.col;
     $('meCats').innerHTML = [...state.cats.filter((c) => c.zh !== '健康'), { zh: '', color: me.cat ? '#888888' : me.col }].map((c) => `<button type="button" data-cat="${esc(c.zh)}" class="${me.cat === c.zh ? 'on' : ''}"><i class="cat-dot" style="background:${esc(c.zh ? c.color : me.col)}"></i>${esc(c.zh ? catName(c.zh) : t('markOther'))}</button>`).join('');
   }
-  function openEditor(src, marks, cb, preferCats) {
+  function openEditor(src, marks, cb, preferCats, refMarks) {
     me.marks = JSON.parse(JSON.stringify(marks || [])); me.hist = []; me.fut = []; me.cb = cb; me.cur = null; me.hidden = false; me.mode = 'draw';
+    me.ref = refMarks || [];
     me.start = JSON.stringify(me.marks);
     const first = (preferCats || []).find((z) => catOf(z) && z !== '健康');
     me.cat = first || (state.cats[0] || {}).zh || ''; me.col = me.cat ? catColor(me.cat) : '#e53935';

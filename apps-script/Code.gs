@@ -67,7 +67,7 @@ function doPost(e) {
             it.confident === false ? '不确定' : '确定', safe_(clip_(it.note, 1000)),
             '=HYPERLINK("https://drive.google.com/file/d/' + String(it.fileId).replace(/[^\w-]/g, '') + '/view","打开照片")',
             safe_(clip_(it.name, 200)), 0, String(it.fileId).replace(/[^\w-]/g, ''),
-            JSON.stringify(labels),
+            JSON.stringify(labels), subMarks_(it.marks),
           ];
           if (rowOf[id]) {
             const keep = sh.getRange(rowOf[id], 14).getValue(); // review count stays
@@ -351,7 +351,7 @@ function createBook_(root, tz) {
 }
 
 // ---------- Review data: tabs "送审", "审核", "类别" in the same Sheet ----------
-const SUB_HEADERS = ['送审时间', 'ID', '拍摄者', '文件夹', '果园', '树号', '拍摄时间', '初步判断', '手写补充', '把握', '注解', '照片', '文件名', '审核人数', 'fileId', 'labelsJSON'];
+const SUB_HEADERS = ['送审时间', 'ID', '拍摄者', '文件夹', '果园', '树号', '拍摄时间', '初步判断', '手写补充', '把握', '注解', '照片', '文件名', '审核人数', 'fileId', 'labelsJSON', 'marksJSON'];
 const REV_HEADERS = ['审核时间', '送审ID', '审核员', '结论', '判断', '手写补充', '留言', '标记数', '标记图', 'marksJSON', '版本', 'labelsJSON'];
 const CAT_HEADERS = ['中文', 'English', 'Melayu', '颜色', '启用'];
 const DEFAULT_CATS = [
@@ -370,6 +370,11 @@ function getTab_(root, tz, name, headers) {
     sh.getRange(1, 1, 1, headers.length).setValues([headers]).setFontWeight('bold').setBackground('#2e1a63').setFontColor('#ffffff');
     sh.setFrozenRows(1);
     sh.getRange('A:A').setNumberFormat('yyyy-mm-dd hh:mm');
+  } else if (sh.getLastColumn() < headers.length) {
+    // Tab made by an older version: add the new header cells at the end.
+    const from = sh.getLastColumn() + 1;
+    sh.getRange(1, from, 1, headers.length - from + 1).setValues([headers.slice(from - 1)])
+      .setFontWeight('bold').setBackground('#2e1a63').setFontColor('#ffffff');
   }
   return sh;
 }
@@ -384,14 +389,21 @@ function readCategories_(root, tz) {
     .filter(function (r) { return String(r[0]).trim() && String(r[4]).trim() !== '否'; })
     .map(function (r) { return { zh: String(r[0]).trim(), en: String(r[1]).trim(), ms: String(r[2]).trim(), color: String(r[3]).trim() || '#888888' }; });
 }
+// Photographer's own marks (same 0..1 format as the reviewers'); dropped if too big for a cell.
+function subMarks_(marks) {
+  if (!Array.isArray(marks) || !marks.length) return '';
+  const s = JSON.stringify(marks.slice(0, 200));
+  return s.length > 45000 ? '' : s;
+}
 function readSubs_(root, tz) {
   const v = getTab_(root, tz, '送审', SUB_HEADERS).getDataRange().getValues().slice(1);
   return v.filter(function (r) { return r[1]; }).map(function (r) {
     let labels = []; try { labels = JSON.parse(r[15] || '[]'); } catch (e) {}
+    let marks = []; try { marks = JSON.parse(r[16] || '[]'); } catch (e) {}
     return {
       id: String(r[1]), submittedAt: iso_(r[0]), by: String(r[2]), folder: String(r[3]), orchard: String(r[4]), tree: String(r[5]),
       capturedAt: iso_(r[6]), labels: labels, labelText: String(r[8]), confident: String(r[9]) !== '不确定', note: String(r[10]),
-      name: String(r[12]), fileId: String(r[14]),
+      name: String(r[12]), fileId: String(r[14]), marks: Array.isArray(marks) ? marks : [],
     };
   });
 }

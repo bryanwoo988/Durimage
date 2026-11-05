@@ -712,3 +712,12 @@ html.ob-mode .select-bar { display: none; }
 .rev-img { display: flex; justify-content: center; align-items: center; background: #000; }
 .rev-img img { width: auto !important; max-width: 100%; height: auto; max-height: 46dvh; object-fit: fill !important; display: block; }
 body.role-reviewer .team-only { display: none !important; }
+
+/* Photographer's own marks */
+.my-mark-btn { width: 100%; margin: 4px 0 2px; display: flex; align-items: center; justify-content: center; gap: 8px; }
+.my-mark-btn svg { width: 18px; height: 18px; }
+.my-mark-btn:disabled { opacity: .45; }
+.my-mark-hint { margin: 2px 0 8px; }
+.dj-view { margin: 6px 0 0; padding-left: 0; }
+.jv-actions .btn svg { width: 15px; height: 15px; vertical-align: -2px; margin-right: 4px; }
+.sub-marks { margin-top: 10px; }

@@ -3,6 +3,15 @@
 // date = the real release time in UTC (the moment it is pushed), e.g. from `date -u +%Y-%m-%dT%H:%M:%SZ`.
 window.DURIMAGE_CHANGELOG = [
   {
+    version: '1.5.1',
+    date: '2026-11-05T06:02:03Z',
+    notes: {
+      zh: ['拍照的人也能在照片上画标记了：「保存照片」画面按「在照片上标记」（一次一张），或在照片详情按「标记」，送审前后都能改，改了会自动重新送审', '审核员看到的拍照者标记是虚线，自己画的是实线；可以先关掉拍照者的标记，自己判断'],
+      en: ['Photographers can now mark the photo too: tap "Mark the photo" in Save photos (one photo at a time), or "Mark" in the photo details; marks can be changed before or after sending, and changes are sent again automatically', "Reviewers see the photographer's marks as dashed lines and their own as solid; they can switch the photographer's marks off to judge on their own first"],
+      ms: ['Jurugambar kini boleh menanda foto: ketik "Tanda pada foto" dalam Simpan foto (satu foto setiap kali), atau "Tanda" dalam butiran foto; tanda boleh diubah sebelum atau selepas dihantar, dan perubahan dihantar semula secara automatik', 'Penyemak melihat tanda jurugambar sebagai garis putus dan tanda sendiri sebagai garis penuh; tanda jurugambar boleh dimatikan untuk menilai sendiri dahulu'],
+    },
+  },
+  {
     version: '1.5.0',
     date: '2026-11-05T05:22:32Z',
     notes: {
