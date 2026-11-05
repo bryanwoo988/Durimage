@@ -244,6 +244,13 @@ function doPost(e) {
           if (r.getResponseCode() === 200) blob = r.getBlob();
         }
       } catch (e) { /* use the original below */ }
+      if (req.thumbOnly) { // review-list thumbnail missing from the 缩图 tab: Drive's small one, never the big original
+        if (!blob) return json({ ok: false, error: 'no_thumb' });
+        const url = 'data:' + (blob.getContentType() || 'image/jpeg') + ';base64,' + Utilities.base64Encode(blob.getBytes());
+        const sid = clip_(req.subId, 40);
+        if (sid && url.length < 45000) { try { withLock_(function () { saveThumb_(root, req.tz, sid, url); }); } catch (e) {} } // next time it is there
+        return json({ ok: true, thumb: url });
+      }
       if (!blob || req.original) {
         if (f.getSize() > 20 * 1024 * 1024) return json({ ok: false, error: 'too_large' });
         blob = f.getBlob();

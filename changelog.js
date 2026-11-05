@@ -3,6 +3,15 @@
 // date = the real release time in UTC (the moment it is pushed), e.g. from `date -u +%Y-%m-%dT%H:%M:%SZ`.
 window.DURIMAGE_CHANGELOG = [
   {
+    version: '1.7.2',
+    date: '2026-11-05T15:03:14Z',
+    notes: {
+      zh: ['缺缩图的照片改向 Drive 拿它自己的小缩图，并存回 Sheet，下次不用再拿；不会再为了缩图下载整张原图', '手机里以前拍的照片，送审时缩图太大也会自动缩小'],
+      en: ['Missing thumbnails are now fetched as Drive\'s own small thumbnail and saved back to the Sheet, so they are not fetched again; the full photo is no longer downloaded just for a thumbnail', 'Older photos on the phone get their thumbnail shrunk when sent, if it is too big'],
+      ms: ['Lakaran kecil yang tiada kini diambil sebagai lakaran kecil Drive sendiri dan disimpan semula ke Sheet, jadi tidak diambil lagi; foto penuh tidak lagi dimuat turun hanya untuk lakaran kecil', 'Foto lama dalam telefon akan dikecilkan lakarannya semasa dihantar jika terlalu besar'],
+    },
+  },
+  {
     version: '1.7.1',
     date: '2026-11-05T14:50:17Z',
     notes: {

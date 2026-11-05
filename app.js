@@ -1403,11 +1403,20 @@
     try {
       for (let k = 0; k < ready.length; k += 20) {
         const chunk = ready.slice(k, k + 20);
-        const res = await api({ action: 'submit', key: state.password, tz: tzName(), items: chunk.map(subPayload) });
+        const items = await Promise.all(chunk.map(async (i) => ({ ...subPayload(i), thumb: await fitThumbUrl(i.thumb).catch(() => '') })));
+        const res = await api({ action: 'submit', key: state.password, tz: tzName(), items });
         if (!res.ok) { if (res.error === 'bad_key') passwordRejected(); break; }
         for (const i of chunk) { i.sub.done = true; i.sub.at = new Date().toISOString(); await putItem(i); }
       }
     } catch (e) { console.error(e); } finally { flushing = false; render(); }
+  }
+  // Photos taken before thumbnails were size-limited can still have one too big for the Sheet cell:
+  // shrink it (same rule as for new photos) before sending.
+  async function fitThumbUrl(url) {
+    if (!url || url.length < THUMB_MAX || !url.startsWith('data:image')) return url;
+    const im = new Image(); im.src = url; await im.decode();
+    const out = fitThumb(im);
+    return out.length < THUMB_MAX ? out : '';
   }
   function markForReview(items) {
     return Promise.all(items.filter((i) => !i.removed).map((i) => { i.sub = { want: true, done: false }; return putItem(i); }));
@@ -1740,7 +1749,28 @@
     $('hubBadge').textContent = all.filter((s) => !s.reviewCount).length;
   }
   let thumbBusy = false;
+  // Thumbnails the 缩图 tab does not have (too detailed to fit a cell): ask Drive for its own small one, one by one.
+  const missingThumbs = new Set(), noThumb = new Set();
+  let driveThumbBusy = false;
+  async function fillMissingThumbs() {
+    if (driveThumbBusy || DEMO || !navigator.onLine) return;
+    driveThumbBusy = true;
+    try {
+      for (const id of [...missingThumbs]) {
+        missingThumbs.delete(id);
+        if (thumbCache.has(id) || noThumb.has(id)) continue;
+        const s = revState.items.find((x) => x.id === id) || (revState.removed || []).find((x) => x.subId === id);
+        if (!s || !s.fileId) continue;
+        const r = await api({ action: 'image', key: state.password, tz: tzName(), fileId: s.fileId, size: 240, thumbOnly: true, subId: id });
+        let th = r.ok ? r.thumb || (r.data ? `data:${r.mime || 'image/jpeg'};base64,${r.data}` : '') : '';
+        if (th && th.length > THUMB_MAX * 2) { const im = new Image(); im.src = th; await im.decode(); th = fitThumb(im); } // older Apps Script sent the whole photo
+        if (!th) { noThumb.add(id); continue; }
+        setThumb(id, th);
+      }
+    } catch (e) { console.error(e); } finally { driveThumbBusy = false; }
+  }
   async function loadThumbs(ids) {
+    ids = ids.filter((id) => !missingThumbs.has(id) && !noThumb.has(id));
     if (thumbBusy || !ids.length || !navigator.onLine) return;
     thumbBusy = true;
     try {
@@ -1748,31 +1778,14 @@
         const r = await api({ action: 'thumbs', key: state.password, tz: tzName(), ids: ids.slice(k, k + 30) });
         if (!r.ok) break;
         Object.entries(r.thumbs || {}).forEach(([id, th]) => { if (th) setThumb(id, th); });
-        // No saved thumbnail (it was too big for the sheet): get a small copy from Drive instead.
-        for (const id of ids.slice(k, k + 30)) if (!thumbCache.has(id)) await driveThumb(id);
+        ids.slice(k, k + 30).filter((id) => !(r.thumbs || {})[id]).forEach((id) => missingThumbs.add(id)); // filled from Drive below
       }
     } catch {} finally { thumbBusy = false; }
+    fillMissingThumbs();
   }
   function setThumb(id, th) {
     thumbCache.set(id, th);
     document.querySelectorAll(`.rv-item[data-sid="${CSS.escape(id)}"] .rv-thumb, .rv-thumb[data-tid="${CSS.escape(id)}"]`).forEach((el) => { el.style.backgroundImage = `url('${th}')`; });
-  }
-  const thumbTried = new Set();
-  async function driveThumb(id) {
-    if (DEMO || thumbTried.has(id)) return;
-    thumbTried.add(id);
-    const s = revState.items.find((x) => x.id === id);
-    if (!s || !s.fileId) return;
-    try {
-      const r = await api({ action: 'image', key: state.password, tz: tzName(), fileId: s.fileId, size: 240 });
-      if (!r.ok || !r.data) return;
-      let th = `data:${r.mime || 'image/jpeg'};base64,${r.data}`;
-      if (th.length > THUMB_MAX * 2) { // Drive sent the full photo: shrink it so the list stays light
-        const im = new Image(); im.src = th; await im.decode();
-        th = fitThumb(im);
-      }
-      setThumb(id, th);
-    } catch {}
   }
   $('revTabs').onclick = (e) => { const b = e.target.closest('[data-tab]'); if (b) { revState.tab = b.dataset.tab; renderQueue(); } };
   [['revSort', 'sort'], ['revCat', 'cat'], ['revBy', 'by'], ['revOrchard', 'orchard'], ['revDate', 'date']].forEach(([id, k]) => { $(id).onchange = () => { revState[k] = $(id).value; renderQueue(); }; });
