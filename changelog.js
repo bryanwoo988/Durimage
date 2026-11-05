@@ -3,6 +3,15 @@
 // date = the real release time in UTC (the moment it is pushed), e.g. from `date -u +%Y-%m-%dT%H:%M:%SZ`.
 window.DURIMAGE_CHANGELOG = [
   {
+    version: '1.4.1',
+    date: '2026-11-05T00:52:43Z',
+    notes: {
+      zh: ['树牌模式还没输入树牌时，按快门会先请你输入树牌，填好后相机直接打开', '从相册上传时，会清楚提示还没填果园还是树号；没填的话照片会归类成仅训练集'],
+      en: ['In tree-tag mode without a tag, the shutter asks for the tag first and then opens the camera', 'Gallery uploads say exactly whether the orchard or the tree is missing; missing ones make the photos training-only'],
+      ms: ['Dalam mod tag pokok tanpa tag, butang kamera minta tag dahulu kemudian buka kamera', 'Muat naik galeri menyatakan dengan jelas sama ada kebun atau pokok belum diisi; jika tidak diisi foto jadi latihan sahaja'],
+    },
+  },
+  {
     version: '1.4.0',
     date: '2026-11-05T00:48:34Z',
     notes: {

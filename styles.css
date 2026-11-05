@@ -552,3 +552,4 @@ html.vp-gap .dock { padding-bottom: 10px; }
 .seg2 { grid-template-columns: 1fr 1fr; }
 .tm-desc { margin-top: 8px; }
 .rm-old .set-title { word-break: normal; overflow-wrap: anywhere; }
+.tree-val.warn { color: var(--red); font-size: 16px; }

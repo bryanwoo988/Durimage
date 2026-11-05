@@ -140,6 +140,7 @@
       if (outside || e.target.closest('[data-close]')) {
         bd.hidden = true;
         if (bd.id === 'reviewSheet') { resetReview(); maybeReload(); }
+        if (bd.id === 'orchardSheet' || bd.id === 'treeSheet') pendingCamera = false;
       }
     });
   });
@@ -420,8 +421,10 @@
     const tr = o ? treeOf(o) : { mode: 'seq' };
     $('treeLabel').textContent = t(tr.mode === 'tag' ? 'treeTagLabel' : 'treeSeq');
     const tv = o ? treeDisplay(o) : '';
-    $('treeValue').textContent = tv || '—';
-    $('treeValue').classList.toggle('muted', !tv);
+    const missingTag = !!o && tr.mode === 'tag' && !tr.tag;
+    $('treeValue').textContent = missingTag ? t('tagMissing') : (tv || '—');
+    $('treeValue').classList.toggle('muted', !tv && !missingTag);
+    $('treeValue').classList.toggle('warn', missingTag);
     $('treeModeLabel').textContent = t('treeModeLabel', { o: o || '—' });
     $('treeModeSeg').innerHTML = ['seq', 'tag'].map((m) =>
       `<button type="button" data-tm="${m}" class="${o && tr.mode === m ? 'on' : ''}" ${o ? '' : 'disabled'}>${esc(t(m === 'seq' ? 'modeSeq' : 'modeTag'))}</button>`).join('');
@@ -451,7 +454,11 @@
     setOrchard(v);
     closeSheet('orchardSheet');
     maybeAskNewDay();
-    if (pendingCamera) { pendingCamera = false; $('cameraInput').click(); } // same tap → camera opens
+    if (pendingCamera) {
+      const tr = treeOf(v);
+      if (tr.mode === 'tag' && !tr.tag) { openTreeSheet('tag', ''); $('treeHint').textContent = t('needTagFirst'); return; }
+      pendingCamera = false; $('cameraInput').click(); // same tap → camera opens
+    }
   });
   $('orchardBtn').onclick = () => openOrchardSheet();
 
@@ -494,6 +501,7 @@
     }
     tr.day = dayKey(); saveTrees();
     closeSheet('treeSheet'); render();
+    if (pendingCamera) { pendingCamera = false; $('cameraInput').click(); } // same tap → camera opens
   });
   $('treeBtn').onclick = () => {
     if (!state.orchard) return openOrchardSheet();
@@ -534,7 +542,9 @@
   // Shutter: an orchard must be set first (gallery uploads may leave it empty)
   $('cameraInput').closest('label').addEventListener('click', (e) => {
     if (e.target.id === 'cameraInput') return;
-    if (state.track && !state.orchard) { e.preventDefault(); pendingCamera = true; toast(t('needOrchard')); openOrchardSheet(); }
+    if (state.track && !state.orchard) { e.preventDefault(); pendingCamera = true; toast(t('needOrchard')); openOrchardSheet(); return; }
+    const tr = state.track && state.orchard ? treeOf(state.orchard) : null;
+    if (tr && tr.mode === 'tag' && !tr.tag) { e.preventDefault(); pendingCamera = true; openTreeSheet('tag', ''); $('treeHint').textContent = t('needTagFirst'); }
   });
 
   // Review sheet: orchard / tree part
@@ -561,7 +571,13 @@
       $('rmCameraText').textContent = `${sn.orchard} · ${sn.mode === 'tag' ? t('treeTagLabel') + ' ' + sn.token.slice(3) : t('treeN', { n: Number(sn.token.slice(1)) })}`;
     }
     $('rmFields').hidden = !cam && $('oldToggle').checked;
-    $('trainOnlyNote').hidden = !isTrainOnly(reviewMeta());
+    const m = reviewMeta();
+    $('trainOnlyNote').hidden = !isTrainOnly(m);
+    if (m && isTrainOnly(m)) {
+      const key = m.source === 'old' ? 'trainOnlyHint'
+        : !m.orchard && m.token === 'tNA' ? 'missBoth' : !m.orchard ? 'missOrchard' : 'missTree';
+      $('trainOnlyNote').querySelector('span').textContent = t(key);
+    }
   }
   ['oldToggle', 'rmOrchard', 'rmTree'].forEach((id) => $(id).addEventListener(id === 'oldToggle' ? 'change' : 'input', renderReviewMeta));
 

@@ -1,5 +1,7 @@
 window.I18N = {
   zh: {
+    needTagFirst: '这个果园用树牌号码，请先输入这棵树的树牌，才能拍照。没有树牌的话，这些照片只能当训练集。', tagMissing: '未填树牌',
+    missTree: '还没填树号：这样会归类成仅训练集。知道是哪一棵的话，请填树号或树牌。', missOrchard: '还没填果园：这样会归类成仅训练集。知道是哪个果园的话，请填果园名称。', missBoth: '果园和树号都还没填：这样会归类成仅训练集。知道的话请填上；完全不知道可以打开「旧照片」。',
     orchard: '果园', orchardOptional: '果园（选填）', orchardPh: '例如 BENTONG-A', noOrchard: '未设定 · 点击设定',
     orchardRule: '只能用英文字母、数字和 -，越短越好。会自动转成大写。', asciiOnly: '只能输入英文字母、数字和 -，其他字已去掉',
     recentOrchards: '最近用过', saveWord: '保存', confirm: '确定',
@@ -119,6 +121,8 @@ window.I18N = {
     saved: '已保存',
   },
   en: {
+    needTagFirst: 'This orchard uses tree tags. Enter this tree\'s tag before taking photos; without a tag the photos can only be used for training.', tagMissing: 'No tag yet',
+    missTree: 'No tree number yet: these photos will be training-only. If you know the tree, enter its number or tag.', missOrchard: 'No orchard yet: these photos will be training-only. If you know the orchard, enter its name.', missBoth: 'No orchard or tree yet: these photos will be training-only. Fill them in if you know them, or switch on Old photos.',
     orchard: 'Orchard', orchardOptional: 'Orchard (optional)', orchardPh: 'e.g. BENTONG-A', noOrchard: 'Not set · tap to set',
     orchardRule: 'Letters, numbers and - only; the shorter the better. Changed to capitals automatically.', asciiOnly: 'Only letters, numbers and - are allowed; other characters were removed',
     recentOrchards: 'Recently used', saveWord: 'Save', confirm: 'OK',
@@ -238,6 +242,8 @@ window.I18N = {
     saved: 'Saved',
   },
   ms: {
+    needTagFirst: 'Kebun ini guna tag pokok. Masukkan tag pokok ini sebelum merakam; tanpa tag foto hanya untuk latihan.', tagMissing: 'Tiada tag',
+    missTree: 'Nombor pokok belum diisi: foto ini akan jadi latihan sahaja. Jika tahu pokoknya, isi nombor atau tag.', missOrchard: 'Kebun belum diisi: foto ini akan jadi latihan sahaja. Jika tahu kebunnya, isi nama kebun.', missBoth: 'Kebun dan pokok belum diisi: foto ini akan jadi latihan sahaja. Isi jika tahu, atau hidupkan Foto lama.',
     orchard: 'Kebun', orchardOptional: 'Kebun (pilihan)', orchardPh: 'cth. BENTONG-A', noOrchard: 'Belum ditetapkan · ketik',
     orchardRule: 'Huruf, nombor dan - sahaja; lebih pendek lebih baik. Ditukar ke huruf besar secara automatik.', asciiOnly: 'Hanya huruf, nombor dan - dibenarkan; aksara lain telah dibuang',
     recentOrchards: 'Baru digunakan', saveWord: 'Simpan', confirm: 'OK',
