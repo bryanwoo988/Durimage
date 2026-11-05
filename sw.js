@@ -1,7 +1,7 @@
 // Service worker: offline app shell + automatic updates.
 // Bump VERSION (and add an entry at the top of changelog.js) for every release.
 // Any change to this file makes phones install the new version automatically.
-const VERSION = '1.5.6';
+const VERSION = '1.6.0';
 const CACHE = 'durimage-' + VERSION;
 const SHELL = [
   './', 'index.html', 'styles.css', 'app.js', 'i18n.js', 'config.js', 'changelog.js', 'manifest.webmanifest',
@@ -38,4 +38,23 @@ self.addEventListener('fetch', (e) => {
       })
       .catch(() => caches.match(e.request, { ignoreSearch: true }).then((r) => r || caches.match('index.html')))
   );
+});
+
+// Push notifications (sent by the Apps Script through Firebase Cloud Messaging as data messages).
+self.addEventListener('push', (e) => {
+  let d = {};
+  try { const j = e.data ? e.data.json() : {}; d = j.data || j.notification || j; } catch (err) { d = {}; }
+  const title = d.title || 'Durimage';
+  e.waitUntil(self.registration.showNotification(title, {
+    body: d.body || '', icon: 'icons/icon-192.png', badge: 'icons/icon-192.png',
+    tag: d.tag || undefined, renotify: !!d.tag, data: { link: d.link || './' },
+  }));
+});
+self.addEventListener('notificationclick', (e) => {
+  e.notification.close();
+  const link = (e.notification.data && e.notification.data.link) || './';
+  e.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((list) => {
+    for (const c of list) if ('focus' in c) { c.postMessage({ type: 'open', link }); return c.focus(); }
+    return self.clients.openWindow(link);
+  }));
 });

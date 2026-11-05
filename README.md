@@ -109,6 +109,7 @@ SCRIPT_URL: 'https://script.google.com/macros/s/xxxxxxxx/exec',
 > **v1.4.0 改了 `Code.gs`**（重复照片检查、Drive 属性、Sheet 新栏位），请更新并重新部署一次。
 > **v1.5.0 改了 `Code.gs`**（审核功能），而且要在 Script Properties 新增 `REVIEW_PASSWORD` 和 `ADMIN_PASSWORD`，然后重新部署一次。
 > **v1.5.1 改了 `Code.gs`**（「送审」分页多一栏 `marksJSON`，存拍照者的标记；旧的分页会自动补上标题），请更新并重新部署一次。
+> **v1.6.0 改了 `Code.gs`**（通知）：更新代码后先在编辑器选 `setupNotifications` 按 Run 一次（会要求新的授权，装 5 分钟定时器），再重新部署。
 > 只有改 `Code.gs` 的代码才需要重新部署：部署 → 管理部署 → ✏️ 编辑 → 版本选「新版本」→ 部署（网址不变）。
 
 ## 果园和树号
@@ -138,6 +139,41 @@ App 登录时用哪一组密码，就是哪一种身份（设置 → 身份 → 
 - 拍照的人也可以在照片上画标记（保存时或在照片详情），送审后改了会自动重新送审。审核员看到的拍照者标记是**虚线**，自己的是**实线**，也可以关掉拍照者的标记自己先看。
 - 审核员画的标注不会改到原图：标注资料存在 Sheet，画了标注的副本存在 Drive 的 `_审核标记` 文件夹（这个文件夹不会出现在 App 的文件夹清单里）。
 - Google Sheet `Durimage 照片记录` 会多出几个分页：`送审`（每张送审照片一行）、`审核`（每次审核一行，包括修改）、`类别`（病虫害清单，也可以直接在 Sheet 改）、`缩图`（隐藏，App 用）。
+
+## 通知
+
+**App 内提醒**（不用设置就有）：
+- 拍照的人 / 管理员：首页出现「David 审核了你的 3 张照片 · 查看」，点开是这几张照片的结果。
+- 审核员 / 管理员的审核中心：清单上方出现「Ali 提交了 5 张新照片」。
+- iPhone 主画面 App 图示上的数字：拍照的人 = 有新审核结果的照片数；审核员 = 待审核数。
+
+**手机推送**（App 关着也会响，要设置一次 Firebase）：
+- 有照片送审 → 审核员和管理员收到「Ali 提交了 5 张照片，请审核」。
+- 审核完成 → 拍照的人收到「David 审核了你的 3 张照片（2 张同意，1 张需要改正）」；管理员收到全部专家的审核摘要。
+- **每 5 分钟合并一次**：同一段时间内的事件合成一条通知，不会一直响。
+- 每支手机在 设置 → 通知 自己开关；默认全开。重复送审（例如修改标记）不会再通知。
+- 拍照的人是靠 App 里填的**名字**对上的：名字不要重复。
+- iPhone 要 **iOS 16.4 以上**，而且要**从主画面打开 App**（Safari → 分享 → 加入主画面），才能收推送。
+
+### 设置手机推送（一次，约 15 分钟）
+
+1. 打开 <https://console.firebase.google.com> → **Create a project**（名字例如 `Durimage`，Google Analytics 可以关掉）。
+2. 项目首页 → **Add app** → 选 **Web**（`</>` 图示）→ 名字 `Durimage` → **Register app**。画面会显示 `const firebaseConfig = { ... }`，把整段复制下来。
+3. ⚙️ **Project settings** → **Cloud Messaging** 分页 → 拉到 **Web configuration → Web Push certificates** → **Generate key pair**，复制那串 key。
+4. ⚙️ **Project settings** → **Service accounts** 分页 → **Generate new private key** → **Generate key**，会下载一个 `.json` 文件。用记事本打开，全选复制。**这个文件等于密码，不要传给任何人。**
+5. Apps Script → ⚙️ **Project Settings** → **Script Properties** → 加三个：
+
+   | Property | Value |
+   |---|---|
+   | `FCM_WEB_CONFIG` | 第 2 步复制的 `firebaseConfig` 整段 |
+   | `FCM_VAPID_KEY` | 第 3 步的 key |
+   | `FCM_SERVICE_ACCOUNT` | 第 4 步 `.json` 文件的全部内容 |
+
+6. 编辑器上方的函数选单选 **`setupNotifications`** → 按 **Run** → 授权。下面的 Execution log 应该出现两行 ✅。
+7. **Deploy → Manage deployments → ✏️ Edit → New version → Deploy**。
+8. 手机：设置 → 通知 → **开启手机推送** → 允许 → 按「发送测试通知」。
+
+> 没设置 Firebase 也没关系：App 内提醒照样有，只是手机不会响。
 
 ## 首页筛选
 

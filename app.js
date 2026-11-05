@@ -73,7 +73,7 @@
     $('nameStep').textContent = t('step', { n: 2 }) + ' · ' + t('nameTitle');
     render();
   }
-  function setLang(code) { state.lang = code; store.set('lang', code); applyI18n(); if ($('myMarkBtn')) renderMyMarkBtn(); }
+  function setLang(code) { state.lang = code; store.set('lang', code); applyI18n(); if ($('myMarkBtn')) renderMyMarkBtn(); renderNotif(); pushSync(true); }
   function cycleLang() {
     const codes = Object.keys(I18N);
     setLang(codes[(codes.indexOf(state.lang) + 1) % codes.length]);
@@ -181,6 +181,7 @@
     maybeShowWhatsNew();
     applyRole();
     if (state.password && state.name && state.role !== 'reviewer') gpsStart(); // location permission is asked now, not when the camera opens
+    renderNotif(); renderNews(); pushSync(true); setTimeout(maybeAskPush, 2500);
   }
   function setPwVisible(on) {
     $('pwInput').type = on ? 'text' : 'password';
@@ -274,6 +275,7 @@
   function render() {
     $('demoBanner').hidden = !DEMO;
     $('offlineBanner').hidden = navigator.onLine;
+    renderNews();
 
     const cur = state.folders.find((f) => f.id === state.currentFolder);
     $('destName').textContent = cur ? cur.name : t('noFolder') + ' · ' + t('tapToChoose');
@@ -1682,6 +1684,7 @@
         ${lblsHtml(s.labels, s.labelText, s.confident)}<div class="rv-state">${stateTags}</div></div></button>`;
     }).join('');
     loadThumbs(list.slice(0, 300).filter((s) => !thumbCache.has(s.id)).map((s) => s.id));
+    renderRevNews();
     $('hubBadge').hidden = !revIsAdmin() || !revState.loaded;
     $('hubBadge').textContent = all.filter((s) => !s.reviewCount).length;
   }
@@ -2090,6 +2093,221 @@
     }).catch(() => {});
   }
 
+  // ---------- Notifications ----------
+  // In-app notices always work. Phone push uses Firebase Cloud Messaging once the admin has set it up
+  // (the Apps Script merges events and sends every 5 minutes). Settings → Notifications has the switches.
+  const FB_VER = '10.12.2';
+  const notifPrefs = () => ({ sub: true, mine: true, all: true, ...store.get('notif', {}) });
+  const sameName = (a, b) => String(a || '').trim().toLowerCase() === String(b || '').trim().toLowerCase();
+  const pushState = { cfg: null, cfgAt: 0, busy: false };
+  const isIOS = /iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  const isStandalone = () => navigator.standalone === true || (window.matchMedia && matchMedia('(display-mode: standalone)').matches);
+  function pushSupport() {
+    if (isIOS && !isStandalone()) return 'home'; // iPhone: only apps added to the Home Screen can get push
+    if (!('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window)) return isIOS ? 'ios' : 'none';
+    return 'ok';
+  }
+  async function getPushCfg() {
+    if (pushState.cfg && Date.now() - pushState.cfgAt < 10 * 60 * 1000) return pushState.cfg;
+    if (DEMO || !state.password || !navigator.onLine) return { enabled: false };
+    try {
+      const r = await api({ action: 'pushConfig', key: state.password });
+      pushState.cfg = r.ok ? r : { enabled: false }; pushState.cfgAt = Date.now();
+      return pushState.cfg;
+    } catch { return { enabled: false }; }
+  }
+  const loadScript = (src) => new Promise((res, rej) => {
+    if (document.querySelector(`script[src="${src}"]`)) return res();
+    const s = document.createElement('script'); s.src = src; s.onload = res; s.onerror = () => rej(new Error('Firebase could not be loaded')); document.head.appendChild(s);
+  });
+  async function fcmGetToken(cfg) {
+    await loadScript(`https://www.gstatic.com/firebasejs/${FB_VER}/firebase-app-compat.js`);
+    await loadScript(`https://www.gstatic.com/firebasejs/${FB_VER}/firebase-messaging-compat.js`);
+    const fb = window.firebase;
+    if (!fb.apps.length) fb.initializeApp(cfg.config);
+    const reg = await navigator.serviceWorker.ready; // our own sw.js shows the notifications
+    return fb.messaging().getToken({ vapidKey: cfg.vapidKey, serviceWorkerRegistration: reg });
+  }
+  async function pushRegister(token) {
+    const r = await api({ action: 'pushRegister', key: state.password, tz: tzName(), token, name: myName(), prefs: notifPrefs(), lang: state.lang, url: shareUrl() });
+    if (r.ok) store.set('pushAt', Date.now());
+    return r;
+  }
+  async function enablePush() {
+    if (pushSupport() !== 'ok') { renderNotif(); return false; }
+    // Permission first, straight from the tap (iPhone only asks during a user gesture).
+    let perm = Notification.permission;
+    if (perm === 'default') { try { perm = await Notification.requestPermission(); } catch { perm = 'denied'; } }
+    if (perm !== 'granted') { renderNotif(); return false; }
+    const cfg = await getPushCfg();
+    if (!cfg.enabled) { renderNotif(); toast(t('pushNotReady'), true); return false; }
+    pushState.busy = true; renderNotif();
+    try {
+      const token = await fcmGetToken(cfg);
+      if (!token) throw new Error('no token');
+      const r = await pushRegister(token);
+      if (!r.ok) throw new Error(r.error || 'server');
+      store.set('pushToken', token);
+      toast(t('pushOnToast'));
+      return true;
+    } catch (e) {
+      console.error(e); toast(t('pushFailed', { m: String((e && e.message) || e).slice(0, 80) }), true); return false;
+    } finally { pushState.busy = false; renderNotif(); }
+  }
+  async function disablePush() {
+    const token = store.get('pushToken', null);
+    store.del('pushToken'); renderNotif();
+    if (!token) return;
+    try { await api({ action: 'pushUnregister', key: state.password, tz: tzName(), token }); } catch {}
+    try { if (window.firebase && firebase.apps.length) await firebase.messaging().deleteToken(); } catch {}
+  }
+  // Keeps the server's copy of this phone up to date (role, name, language, switches; token refresh once a day).
+  let pushSyncing = false;
+  async function pushSync(force) {
+    const token = store.get('pushToken', null);
+    if (!token || pushSyncing || DEMO || !navigator.onLine || !state.password || state.onboardMode) return;
+    if (pushSupport() !== 'ok' || Notification.permission !== 'granted') { disablePush(); return; } // permission taken away in iPhone Settings
+    const daily = Date.now() - store.get('pushAt', 0) > 24 * 3600 * 1000;
+    if (!force && !daily) return;
+    pushSyncing = true;
+    try {
+      let tok = token;
+      if (daily) {
+        const cfg = await getPushCfg();
+        if (cfg.enabled) { const fresh = await fcmGetToken(cfg); if (fresh && fresh !== token) { await api({ action: 'pushUnregister', key: state.password, tz: tzName(), token }); tok = fresh; store.set('pushToken', fresh); } }
+      }
+      await pushRegister(tok);
+    } catch (e) { console.error(e); } finally { pushSyncing = false; }
+  }
+  function renderNotif() {
+    const r = state.role, p = notifPrefs(), on = !!store.get('pushToken', null), sup = pushSupport(), cfg = pushState.cfg;
+    $('nSubRow').hidden = r === 'team'; $('nMineRow').hidden = r === 'reviewer'; $('nAllRow').hidden = r !== 'admin';
+    $('nSub').checked = p.sub; $('nMine').checked = p.mine; $('nAll').checked = p.all;
+    const denied = sup === 'ok' && Notification.permission === 'denied';
+    const hint = sup === 'home' ? 'pushNeedHome' : sup === 'ios' ? 'pushNeedIOS' : sup === 'none' ? 'pushUnsupported'
+      : on ? 'pushDesc' : denied ? 'pushDenied' : cfg && !cfg.enabled ? 'pushNotReady' : 'pushDesc';
+    $('pushState').textContent = t(on ? 'pushOnState' : 'pushOffState');
+    $('pushState').classList.toggle('on', on);
+    $('pushHint').textContent = t(hint);
+    $('pushBtn').hidden = !(on || (sup === 'ok' && !denied && !(cfg && !cfg.enabled)));
+    $('pushBtn').disabled = pushState.busy || (!on && !cfg);
+    $('pushBtn').textContent = pushState.busy ? t('loading') : t(on ? 'pushDisable' : 'pushEnable');
+    $('pushBtn').className = 'btn btn-block ' + (on ? 'btn-outline' : 'btn-primary');
+    $('pushTestBtn').hidden = !on;
+    $('notifValue').textContent = t(on ? 'notifValPush' : 'notifValApp');
+  }
+  $('notifRowBtn').onclick = async () => { closeSheet('settingsSheet'); renderNotif(); openSheet('notifSheet'); await getPushCfg(); renderNotif(); };
+  $('pushBtn').onclick = () => (store.get('pushToken', null) ? disablePush() : enablePush());
+  $('pushTestBtn').onclick = async () => {
+    const b = $('pushTestBtn'); b.disabled = true;
+    try {
+      const r = await api({ action: 'pushTest', key: state.password, tz: tzName(), token: store.get('pushToken', null), lang: state.lang, url: shareUrl() });
+      toast(r.ok ? t('pushTestSent') : t('pushFailed', { m: r.message || r.error || '' }), !r.ok);
+    } catch { toast(t('serverErr'), true); } finally { b.disabled = false; }
+  };
+  [['nSub', 'sub'], ['nMine', 'mine'], ['nAll', 'all']].forEach(([id, k]) => {
+    $(id).onchange = () => { store.set('notif', { ...notifPrefs(), [k]: $(id).checked }); renderNews(); renderRevNews(); pushSync(true); };
+  });
+
+  // One-time question after signing in (per role), only where push can work.
+  async function maybeAskPush() {
+    const key = 'pushAsked_' + state.role;
+    if (store.get(key, false) || store.get('pushToken', null) || DEMO || state.onboardMode) return;
+    if (pushSupport() !== 'ok' || Notification.permission === 'denied') return;
+    const cfg = await getPushCfg();
+    if (!cfg.enabled || state.onboardMode) return;
+    if (document.querySelector('.sheet-backdrop:not([hidden])') || !$('viewer').hidden) { setTimeout(maybeAskPush, 5000); return; }
+    $('askPushDesc').textContent = t(state.role === 'reviewer' ? 'askPushRev' : state.role === 'admin' ? 'askPushAdmin' : 'askPushTeam');
+    openSheet('askPushSheet');
+  }
+  $('askPushYes').onclick = () => { store.set('pushAsked_' + state.role, true); closeSheet('askPushSheet'); enablePush(); };
+  $('askPushNo').onclick = () => { store.set('pushAsked_' + state.role, true); closeSheet('askPushSheet'); toast(t('askPushLater')); };
+
+  // In-app: new expert reviews of my photos (photographer / admin).
+  const revKey = (id, r) => `${id}|${String(r.reviewer).trim().toLowerCase()}|${r.version || 1}`;
+  function unseenReviews() {
+    const seen = store.get('seenRevs', null);
+    if (seen === null) { markReviewsSeen(true); return []; } // first run: older reviews are not "new"
+    const s = new Set(seen), out = [];
+    for (const i of state.items) for (const r of (i.reviews || [])) if (!sameName(r.reviewer, state.name) && !s.has(revKey(i.id, r))) out.push({ item: i, r });
+    return out;
+  }
+  function markReviewsSeen(quiet) {
+    const all = [];
+    for (const i of state.items) for (const r of (i.reviews || [])) all.push(revKey(i.id, r));
+    store.set('seenRevs', all.slice(-5000));
+    if (!quiet) renderNews();
+  }
+  function renderNews() {
+    const list = state.role === 'reviewer' || !notifPrefs().mine ? [] : unseenReviews();
+    $('newsCard').hidden = !list.length;
+    if (list.length) {
+      const who = [...new Set(list.map((x) => x.r.reviewer))];
+      $('newsText').textContent = t('newsMine', { who: who.join(t('nameSep')), n: new Set(list.map((x) => x.item.id)).size });
+    }
+    setBadge();
+  }
+  function openNews() {
+    const by = new Map();
+    for (const { item, r } of unseenReviews()) {
+      if (!by.has(item.id)) by.set(item.id, { item, revs: new Map() });
+      by.get(item.id).revs.set(String(r.reviewer).trim().toLowerCase(), r); // latest version per expert
+    }
+    $('newsList').innerHTML = [...by.values()].map(({ item, revs }) => {
+      const m = item.meta || {};
+      const title = (m.orchard ? m.orchard + (m.tree ? ' · ' + m.tree : '') : item.folderName) || '';
+      return `<button class="rv-item news-item" data-id="${esc(item.id)}"><div class="rv-thumb" style="background-image:url('${esc(item.thumb || '')}')"></div>
+        <div><div class="rv-title">${esc(title)}</div><div class="rv-meta">${[...revs.values()].map((r) => `<b>${esc(r.reviewer)}</b> · ${esc(t(r.verdict === 'agree' ? 'vAgree' : 'vCorrect'))}`).join('<br>')}</div></div></button>`;
+    }).join('');
+    markReviewsSeen();
+    openSheet('newsSheet');
+  }
+  $('newsOpen').onclick = openNews;
+  $('newsDismiss').onclick = () => markReviewsSeen();
+  $('newsList').onclick = (e) => { const b = e.target.closest('[data-id]'); if (b) { closeSheet('newsSheet'); openDetail(b.dataset.id); } };
+
+  // In-app: newly submitted photos (reviewer / admin review hub).
+  function renderRevNews() {
+    const box = $('revNews');
+    if (!revState.loaded || !notifPrefs().sub) { box.hidden = true; setBadge(); return; }
+    let since = store.get('revSeenAt', null);
+    if (since === null) { since = new Date().toISOString(); store.set('revSeenAt', since); }
+    const fresh = revState.items.filter((s) => String(s.submittedAt) > since && !mine(s).length && !sameName(s.by, myName()));
+    box.hidden = !fresh.length;
+    if (fresh.length) $('revNewsText').textContent = t('revNews', { who: [...new Set(fresh.map((s) => s.by))].join(t('nameSep')), n: fresh.length });
+    setBadge();
+  }
+  const markRevSeen = () => { store.set('revSeenAt', new Date().toISOString()); renderRevNews(); };
+  $('revNewsOpen').onclick = () => { revState.tab = 'todo'; revState.sort = 'new'; markRevSeen(); renderQueue(); window.scrollTo(0, 0); };
+  $('revNewsDismiss').onclick = markRevSeen;
+
+  // Number on the app icon (iPhone home-screen app / Android, where supported).
+  function setBadge() {
+    if (!('setAppBadge' in navigator)) return;
+    let n = 0;
+    if (state.role === 'reviewer') n = revState.loaded && notifPrefs().sub ? revState.items.filter((s) => !mine(s).length).length : 0;
+    else if (notifPrefs().mine && store.get('seenRevs', null) !== null) n = new Set(unseenReviews().map((x) => x.item.id)).size;
+    (n ? navigator.setAppBadge(n) : navigator.clearAppBadge()).catch(() => {});
+  }
+
+  // Opening the app from a notification (?open=… on start, or a message from the service worker).
+  function handleOpen(open) {
+    if (!open || state.onboardMode || !state.password) return;
+    if (open === 'review' || open === 'hub') {
+      if (state.role === 'admin') { hubOpen = true; applyRole(); window.scrollTo(0, 0); revState.tab = open === 'hub' ? 'reviewed' : 'todo'; loadQueue(); }
+      else if (state.role === 'reviewer') { revState.tab = 'todo'; revState.sort = 'new'; loadQueue(); }
+    } else if (open === 'mine' && state.role !== 'reviewer') {
+      fetchMyReviews(true).then(() => { if (unseenReviews().length) openNews(); });
+    }
+  }
+  if ('serviceWorker' in navigator) navigator.serviceWorker.addEventListener('message', (e) => {
+    if (e.data && e.data.type === 'open') { try { handleOpen(new URL(e.data.link, location.href).searchParams.get('open')); } catch {} }
+  });
+  let lastQueueLoad = 0;
+  function refreshQueueIfStale() {
+    if ((state.role === 'reviewer' || hubOpen) && Date.now() - lastQueueLoad > 60 * 1000) { lastQueueLoad = Date.now(); loadQueue(); }
+  }
+
   // ---------- Settings ----------
   $('settingsBtn').onclick = () => openSheet('settingsSheet');
   $('onboardLangBtn').onclick = cycleLang;
@@ -2128,7 +2346,7 @@
 
   window.addEventListener('online', () => { render(); processQueue(); flushSubmissions(); flushReviews(); loadCats(); });
   window.addEventListener('offline', render);
-  document.addEventListener('visibilitychange', () => { if (!document.hidden) { setAppHeight(); if (state.role !== 'reviewer') { maybeAskNewDay(); if (state.password) gpsStart(); flushSubmissions(); fetchMyReviews(false); } processQueue(); flushReviews(); checkForUpdate(false); maybeReload(); } });
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) { setAppHeight(); if (state.role !== 'reviewer') { maybeAskNewDay(); if (state.password) gpsStart(); flushSubmissions(); fetchMyReviews(false); } processQueue(); flushReviews(); pushSync(false); refreshQueueIfStale(); checkForUpdate(false); maybeReload(); } });
 
   // iPhone home-screen apps: after the keyboard closes, the window can stay shrunk (bottom bar
   // floats up, strip at the bottom). Scrolling back to the top once the last field loses focus
@@ -2191,7 +2409,11 @@
       maybeShowWhatsNew();
       loadCats();
       if (state.role !== 'reviewer') { maybeAskNewDay(); gpsStart(); flushSubmissions(); fetchMyReviews(true); } flushReviews();
+      pushSync(false); setTimeout(maybeAskPush, 3000);
     }
+    renderNotif();
+    const openParam = new URLSearchParams(location.search).get('open'); // started from a notification
+    if (openParam) { try { history.replaceState(null, '', location.pathname); } catch {} handleOpen(openParam); }
     setupServiceWorker();
     hideSplash();
     setAppHeight(); nudgeViewport();

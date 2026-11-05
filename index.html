@@ -99,6 +99,7 @@
     <symbol id="i-select" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="4" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="m8.5 12 2.5 2.5 4.5-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
     <symbol id="i-send" viewBox="0 0 24 24"><path d="M4 12 20 4l-6 16-2.5-6.5z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></symbol>
     <symbol id="i-review" viewBox="0 0 24 24"><path d="M6 3.5h9l3.5 3.5v13.5H6z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="m9 13 2 2 4-4.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-bell" viewBox="0 0 24 24"><path d="M6 16V11a6 6 0 0 1 12 0v5l1.6 2H4.4zM10 20.5a2.2 2.2 0 0 0 4 0" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></symbol>
     <symbol id="i-chev-l" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></symbol>
     <symbol id="i-chev-r" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></symbol>
     <symbol id="i-pen" viewBox="0 0 24 24"><path d="M4 20l1-4L16 5l3 3L8 19z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></symbol>
@@ -176,6 +177,11 @@
         <svg class="chev"><use href="#i-chev"/></svg>
       </button>
 
+      <div class="news-card" id="newsCard" hidden>
+        <button class="news-main" id="newsOpen" type="button"><span class="news-bell"><svg><use href="#i-bell"/></svg></span><span class="news-text" id="newsText"></span><span class="news-go" data-i18n="newsView"></span></button>
+        <button class="news-x" id="newsDismiss" type="button" aria-label="Close"><svg><use href="#i-x"/></svg></button>
+      </div>
+
       <section id="recentSection">
         <div class="recent-head">
           <h3 class="section-title" data-i18n="recent"></h3>
@@ -200,6 +206,10 @@
         <button class="icon-btn rev-back" id="revBack" hidden aria-label="Back"><svg><use href="#i-back"/></svg></button>
         <h2 id="revTitle"></h2>
         <button class="pill-btn" id="revRefresh"><svg><use href="#i-retry"/></svg><span data-i18n="refresh"></span></button>
+      </div>
+      <div class="news-card" id="revNews" hidden>
+        <button class="news-main" id="revNewsOpen" type="button"><span class="news-bell"><svg><use href="#i-bell"/></svg></span><span class="news-text" id="revNewsText"></span></button>
+        <button class="news-x" id="revNewsDismiss" type="button" aria-label="Close"><svg><use href="#i-x"/></svg></button>
       </div>
       <div class="segmented rev-tabs" id="revTabs"></div>
       <div class="rev-filters">
@@ -343,6 +353,13 @@
         <div class="segmented seg2" id="treeModeSeg"></div>
         <div class="set-desc tm-desc" id="treeModeDesc"></div>
       </div>
+      <button class="set-group set-row set-link" id="notifRowBtn">
+        <div>
+          <div class="set-label" data-i18n="notif"></div>
+          <div class="set-title" id="notifValue"></div>
+        </div>
+        <svg class="chev"><use href="#i-chev"/></svg>
+      </button>
       <div class="set-group set-row">
         <div>
           <div class="set-label" data-i18n="yourName"></div>
@@ -635,6 +652,59 @@
   </div>
 
   <!-- Categories (admin) -->
+  <div class="sheet-backdrop" id="notifSheet" hidden>
+    <div class="sheet" role="dialog" aria-modal="true">
+      <div class="sheet-grip"></div>
+      <div class="sheet-head">
+        <h2 data-i18n="notif"></h2>
+        <button class="icon-btn" data-close aria-label="Close"><svg><use href="#i-x"/></svg></button>
+      </div>
+      <div class="set-group push-box">
+        <div class="set-title" id="pushState"></div>
+        <div class="set-desc" id="pushHint"></div>
+        <button class="btn btn-primary btn-block" id="pushBtn"></button>
+        <button class="btn btn-ghost btn-block" id="pushTestBtn" data-i18n="pushTest" hidden></button>
+      </div>
+      <label class="set-group set-row" id="nSubRow">
+        <div><div class="set-title" data-i18n="nSub"></div><div class="set-desc" data-i18n="nSubDesc"></div></div>
+        <span class="switch"><input type="checkbox" id="nSub"><span></span></span>
+      </label>
+      <label class="set-group set-row" id="nMineRow">
+        <div><div class="set-title" data-i18n="nMine"></div><div class="set-desc" data-i18n="nMineDesc"></div></div>
+        <span class="switch"><input type="checkbox" id="nMine"><span></span></span>
+      </label>
+      <label class="set-group set-row" id="nAllRow">
+        <div><div class="set-title" data-i18n="nAll"></div><div class="set-desc" data-i18n="nAllDesc"></div></div>
+        <span class="switch"><input type="checkbox" id="nAll"><span></span></span>
+      </label>
+      <p class="hint" data-i18n="notifNote"></p>
+    </div>
+  </div>
+
+  <div class="sheet-backdrop" id="askPushSheet" hidden>
+    <div class="sheet" role="dialog" aria-modal="true">
+      <div class="sheet-grip"></div>
+      <div class="ask-push">
+        <div class="ask-bell"><svg><use href="#i-bell"/></svg></div>
+        <h2 data-i18n="askPushTitle"></h2>
+        <p id="askPushDesc"></p>
+        <button class="btn btn-primary btn-block" id="askPushYes" data-i18n="askPushYes"></button>
+        <button class="btn btn-ghost btn-block" id="askPushNo" data-i18n="askPushNo"></button>
+      </div>
+    </div>
+  </div>
+
+  <div class="sheet-backdrop" id="newsSheet" hidden>
+    <div class="sheet sheet-tall" role="dialog" aria-modal="true">
+      <div class="sheet-grip"></div>
+      <div class="sheet-head">
+        <h2 data-i18n="newsTitle"></h2>
+        <button class="icon-btn" data-close aria-label="Close"><svg><use href="#i-x"/></svg></button>
+      </div>
+      <div class="rev-list" id="newsList"></div>
+    </div>
+  </div>
+
   <div class="sheet-backdrop" id="catSheet" hidden>
     <div class="sheet sheet-tall" role="dialog" aria-modal="true">
       <div class="sheet-grip"></div>

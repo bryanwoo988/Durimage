@@ -8,6 +8,9 @@
  *   ADMIN_PASSWORD  password for the admin: takes photos and sees every review
  *   ROOT_FOLDER_ID  ID of the Drive folder whose sub-folders appear in the app
  *   LOG_SHEET_ID    (set automatically) the "Durimage 照片记录" Sheet for photos with notes
+ *   FCM_SERVICE_ACCOUNT / FCM_WEB_CONFIG / FCM_VAPID_KEY   phone push notifications (see the Notifications section)
+ *
+ * After pasting a new version: choose setupNotifications in the toolbar → Run (once), then redeploy.
  *
  * Deploy → New deployment → Web app → Execute as: Me, Who has access: Anyone.
  */
@@ -34,6 +37,7 @@ function doPost(e) {
     const root = DriveApp.getFolderById(rootId);
 
     if (req.action === 'login') return json({ ok: true, role: role });
+    if (/^push/.test(String(req.action))) return pushAction_(req, role, root, props);
     if (req.action === 'categories') return json({ ok: true, categories: readCategories_(root, req.tz) });
 
     if (req.action === 'addCategory') {
@@ -56,7 +60,7 @@ function doPost(e) {
       return withLock_(function () {
         const sh = getTab_(root, req.tz, '送审', SUB_HEADERS);
         const data = sh.getDataRange().getValues();
-        const rowOf = {};
+        const rowOf = {}, fresh = [];
         for (let i = 1; i < data.length; i++) rowOf[data[i][1]] = i + 1;
         items.forEach(function (it) {
           const id = clip_(it.id, 40); if (!id || !it.fileId) return;
@@ -76,9 +80,11 @@ function doPost(e) {
           } else {
             sh.appendRow(row);
             rowOf[id] = sh.getLastRow();
+            fresh.push([new Date(), 'sub', row[2], id, row[2], '']); // only first-time submissions are announced
           }
           if (it.thumb && String(it.thumb).length < 45000) saveThumb_(root, req.tz, id, String(it.thumb));
         });
+        queueNotice_(root, req.tz, fresh);
         return json({ ok: true });
       });
     }
@@ -141,6 +147,7 @@ function doPost(e) {
         const subs = getTab_(root, req.tz, '送审', SUB_HEADERS), data = subs.getDataRange().getValues();
         for (let i = 1; i < data.length; i++) if (data[i][1] === subId) {
           subs.getRange(i + 1, 14).setValue(latestPerReviewer_(readReviews_(root, req.tz)[subId] || []).length);
+          queueNotice_(root, req.tz, [[new Date(), 'rev', safe_(reviewer), subId, String(data[i][2]), req.verdict === 'agree' ? '同意' : '需要改正']]);
           break;
         }
         return json({ ok: true, version: version });
@@ -516,4 +523,203 @@ function safe_(v) {
 
 function json(obj) {
   return ContentService.createTextOutput(JSON.stringify(obj)).setMimeType(ContentService.MimeType.JSON);
+}
+
+// ---------- Notifications (Firebase Cloud Messaging) ----------
+// Script Properties for push (in-app notices work without them):
+//   FCM_SERVICE_ACCOUNT  the whole JSON of a Firebase service-account key
+//   FCM_WEB_CONFIG       the firebaseConfig of the Firebase web app (copied as is from the Firebase console)
+//   FCM_VAPID_KEY        Cloud Messaging → Web Push certificates → key pair
+// After pasting this code: choose setupNotifications in the toolbar and press Run once (installs the 5-minute timer).
+const NQ_HEADERS = ['时间', '类型', '人', '送审ID', '拍照者', '结论'];
+const PUSH_HEADERS = ['token', '身份', '名字', '送审通知', '我的审核结果', '全部审核结果', '语言', '网址', '更新时间'];
+const NOTIFY_TEXT = {
+  zh: {
+    sep: '、', subTitle: '有新照片要审核', sub: function (who, n) { return who + ' 提交了 ' + n + ' 张照片，请审核'; },
+    mineTitle: '你的照片审核好了', mine: function (who, n, ok, fix) {
+      const parts = []; if (ok) parts.push(ok + ' 张同意'); if (fix) parts.push(fix + ' 张需要改正');
+      return who + ' 审核了你的 ' + n + ' 张照片' + (parts.length ? '（' + parts.join('，') + '）' : '');
+    },
+    allTitle: function (n) { return n + ' 个新的专家审核'; }, allItem: function (who, n) { return who + ' 审核了 ' + n + ' 张'; }, allSep: '，',
+    testTitle: 'Durimage 测试通知', test: '通知设定成功 ✅',
+  },
+  en: {
+    sep: ', ', subTitle: 'New photos to review', sub: function (who, n) { return who + ' sent ' + n + (n === 1 ? ' photo' : ' photos') + ' for review'; },
+    mineTitle: 'Your photos were reviewed', mine: function (who, n, ok, fix) {
+      const parts = []; if (ok) parts.push(ok + ' agreed'); if (fix) parts.push(fix + ' need correction');
+      return who + ' reviewed ' + n + ' of your ' + (n === 1 ? 'photo' : 'photos') + (parts.length ? ' (' + parts.join(', ') + ')' : '');
+    },
+    allTitle: function (n) { return n + ' new expert ' + (n === 1 ? 'review' : 'reviews'); }, allItem: function (who, n) { return who + ' reviewed ' + n; }, allSep: ', ',
+    testTitle: 'Durimage test notification', test: 'Notifications are working ✅',
+  },
+  ms: {
+    sep: ', ', subTitle: 'Foto baharu untuk disemak', sub: function (who, n) { return who + ' menghantar ' + n + ' foto untuk disemak'; },
+    mineTitle: 'Foto anda telah disemak', mine: function (who, n, ok, fix) {
+      const parts = []; if (ok) parts.push(ok + ' setuju'); if (fix) parts.push(fix + ' perlu dibetulkan');
+      return who + ' menyemak ' + n + ' foto anda' + (parts.length ? ' (' + parts.join(', ') + ')' : '');
+    },
+    allTitle: function (n) { return n + ' semakan pakar baharu'; }, allItem: function (who, n) { return who + ' menyemak ' + n; }, allSep: ', ',
+    testTitle: 'Notifikasi ujian Durimage', test: 'Notifikasi berfungsi ✅',
+  },
+};
+
+function hiddenTab_(root, tz, name, headers) {
+  const sh = getTab_(root, tz, name, headers);
+  if (!sh.isSheetHidden()) { try { sh.hideSheet(); } catch (e) {} }
+  return sh;
+}
+// Called from submit / review: remember what happened; the 5-minute timer sends it (merged).
+function queueNotice_(root, tz, rows) {
+  if (!rows.length) return;
+  const sh = hiddenTab_(root, tz, '_通知', NQ_HEADERS);
+  rows.forEach(function (r) { sh.appendRow(r); });
+  PropertiesService.getScriptProperties().setProperty('NOTIFY_PENDING', '1');
+}
+function pushConfig_(props) {
+  const sa = props.getProperty('FCM_SERVICE_ACCOUNT'), web = props.getProperty('FCM_WEB_CONFIG'), vapid = props.getProperty('FCM_VAPID_KEY');
+  if (!sa || !web || !vapid) return null;
+  const pick = function (k) { const m = String(web).match(new RegExp('["\']?' + k + '["\']?\\s*:\\s*["\']([^"\']+)["\']')); return m ? m[1] : ''; };
+  const cfg = { apiKey: pick('apiKey'), projectId: pick('projectId'), messagingSenderId: pick('messagingSenderId'), appId: pick('appId') };
+  if (!cfg.apiKey || !cfg.projectId || !cfg.messagingSenderId || !cfg.appId) return null;
+  return { config: cfg, vapidKey: String(vapid).trim() };
+}
+function b64url_(v) { return Utilities.base64EncodeWebSafe(v).replace(/=+$/, ''); }
+// OAuth token for FCM from the service-account key (RS256 JWT), cached ~50 minutes.
+function fcmToken_(sa) {
+  const cache = CacheService.getScriptCache(), hit = cache.get('fcm_token');
+  if (hit) return hit;
+  const now = Math.floor(Date.now() / 1000);
+  const head = b64url_(JSON.stringify({ alg: 'RS256', typ: 'JWT' }));
+  const claim = b64url_(JSON.stringify({ iss: sa.client_email, scope: 'https://www.googleapis.com/auth/firebase.messaging', aud: 'https://oauth2.googleapis.com/token', iat: now, exp: now + 3600 }));
+  const sig = b64url_(Utilities.computeRsaSha256Signature(head + '.' + claim, sa.private_key));
+  const r = UrlFetchApp.fetch('https://oauth2.googleapis.com/token', {
+    method: 'post', muteHttpExceptions: true,
+    payload: { grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer', assertion: head + '.' + claim + '.' + sig },
+  });
+  const j = JSON.parse(r.getContentText() || '{}');
+  if (!j.access_token) throw new Error('fcm_auth ' + r.getResponseCode() + ' ' + r.getContentText().slice(0, 300));
+  cache.put('fcm_token', j.access_token, 3000);
+  return j.access_token;
+}
+// msgs: [{ token, title, body, link, tag }] → [{ token, code, gone }]
+function fcmSend_(props, msgs) {
+  if (!msgs.length) return [];
+  const sa = JSON.parse(props.getProperty('FCM_SERVICE_ACCOUNT'));
+  const tok = fcmToken_(sa);
+  const url = 'https://fcm.googleapis.com/v1/projects/' + sa.project_id + '/messages:send';
+  const res = UrlFetchApp.fetchAll(msgs.map(function (m) {
+    return {
+      url: url, method: 'post', contentType: 'application/json', muteHttpExceptions: true, headers: { Authorization: 'Bearer ' + tok },
+      payload: JSON.stringify({ message: { token: m.token, data: { title: m.title, body: m.body, link: m.link || '', tag: m.tag || '' },
+        webpush: { headers: { Urgency: 'high', TTL: '86400' } } } }),
+    };
+  }));
+  return res.map(function (r, i) {
+    const code = r.getResponseCode(), text = r.getContentText();
+    return { token: msgs[i].token, code: code, gone: code === 404 || (code === 400 && /registration token|UNREGISTERED|INVALID_ARGUMENT/.test(text)), text: text.slice(0, 200) };
+  });
+}
+function readDevices_(root, tz) {
+  const sh = hiddenTab_(root, tz, '_推送', PUSH_HEADERS);
+  return sh.getDataRange().getValues().slice(1).filter(function (r) { return r[0]; }).map(function (r) {
+    return { token: String(r[0]), role: String(r[1]), name: String(r[2]), pSub: r[3] !== '否', pMine: r[4] !== '否', pAll: r[5] !== '否', lang: String(r[6]) || 'zh', url: String(r[7]) };
+  });
+}
+function dropDevices_(root, tz, tokens) {
+  if (!tokens.length) return;
+  const sh = hiddenTab_(root, tz, '_推送', PUSH_HEADERS), v = sh.getDataRange().getValues();
+  for (let i = v.length - 1; i >= 1; i--) if (tokens.indexOf(String(v[i][0])) >= 0) sh.deleteRow(i + 1);
+}
+function pushAction_(req, role, root, props) {
+  if (req.action === 'pushConfig') {
+    const c = pushConfig_(props);
+    return json(c ? { ok: true, enabled: true, config: c.config, vapidKey: c.vapidKey } : { ok: true, enabled: false });
+  }
+  const token = clip_(req.token, 400);
+  if (!token) return json({ ok: false, error: 'bad_token' });
+  if (req.action === 'pushRegister') {
+    return withLock_(function () {
+      const sh = hiddenTab_(root, req.tz, '_推送', PUSH_HEADERS), v = sh.getDataRange().getValues();
+      const p = req.prefs || {}, yn = function (b) { return b === false ? '否' : '是'; };
+      const row = [token, role, safe_(clip_(req.name, 40)), yn(p.sub), yn(p.mine), yn(p.all), ['zh', 'en', 'ms'].indexOf(req.lang) >= 0 ? req.lang : 'zh',
+        clip_(req.url, 300).replace(/[?#].*$/, ''), new Date()];
+      for (let i = 1; i < v.length; i++) if (String(v[i][0]) === token) { sh.getRange(i + 1, 1, 1, row.length).setValues([row]); return json({ ok: true }); }
+      sh.appendRow(row);
+      return json({ ok: true });
+    });
+  }
+  if (req.action === 'pushUnregister') { withLock_(function () { dropDevices_(root, req.tz, [token]); }); return json({ ok: true }); }
+  if (req.action === 'pushTest') {
+    if (!pushConfig_(props)) return json({ ok: false, error: 'push_not_configured' });
+    const T = NOTIFY_TEXT[req.lang] || NOTIFY_TEXT.zh;
+    const r = fcmSend_(props, [{ token: token, title: T.testTitle, body: T.test, link: clip_(req.url, 300), tag: 'durimage-test' }])[0];
+    if (r.gone) dropDevices_(root, req.tz, [token]);
+    return json(r.code === 200 ? { ok: true } : { ok: false, error: 'push_failed', message: r.code + ' ' + r.text });
+  }
+  return json({ ok: false, error: 'bad_action' });
+}
+
+// Runs every 5 minutes (installed by setupNotifications): one merged notification per person.
+function sendNotifications() {
+  const props = PropertiesService.getScriptProperties();
+  if (props.getProperty('NOTIFY_PENDING') !== '1') return; // nothing new: no Sheet is opened
+  const rootId = props.getProperty('ROOT_FOLDER_ID');
+  if (!rootId) return;
+  const root = DriveApp.getFolderById(rootId), tz = Session.getScriptTimeZone();
+  let events = [];
+  withLock_(function () {
+    const q = hiddenTab_(root, tz, '_通知', NQ_HEADERS), n = q.getLastRow();
+    if (n >= 2) { events = q.getRange(2, 1, n - 1, NQ_HEADERS.length).getValues(); q.getRange(2, 1, n - 1, NQ_HEADERS.length).clearContent(); }
+    props.deleteProperty('NOTIFY_PENDING');
+  });
+  if (!events.length || !pushConfig_(props)) return;
+  const same = function (a, b) { return String(a || '').trim().toLowerCase() === String(b || '').trim().toLowerCase(); };
+  const subs = events.filter(function (e) { return e[1] === 'sub'; }), revs = events.filter(function (e) { return e[1] === 'rev'; });
+  const group = function (list, keyIdx) { // { person: Set(subId) } in first-seen order
+    const out = {}, order = [];
+    list.forEach(function (e) { const k = String(e[keyIdx]); if (!out[k]) { out[k] = {}; order.push(k); } out[k][e[3]] = e[5]; });
+    return order.map(function (k) { return { who: k, ids: Object.keys(out[k]), verdicts: out[k] }; });
+  };
+  const msgs = [];
+  readDevices_(root, tz).forEach(function (d) {
+    const T = NOTIFY_TEXT[d.lang] || NOTIFY_TEXT.zh, base = d.url || '';
+    if ((d.role === 'reviewer' || d.role === 'admin') && d.pSub) {
+      const g = group(subs.filter(function (e) { return !same(e[2], d.name); }), 2);
+      const n = g.reduce(function (s, x) { return s + x.ids.length; }, 0);
+      if (n) msgs.push({ token: d.token, title: T.subTitle, body: T.sub(g.map(function (x) { return x.who; }).join(T.sep), n), link: base + '?open=review', tag: 'durimage-sub' });
+    }
+    if (d.role === 'admin' && d.pAll) {
+      const g = group(revs.filter(function (e) { return !same(e[2], d.name); }), 2);
+      const n = g.reduce(function (s, x) { return s + x.ids.length; }, 0);
+      if (n) msgs.push({ token: d.token, title: T.allTitle(n), body: g.map(function (x) { return T.allItem(x.who, x.ids.length); }).join(T.allSep), link: base + '?open=hub', tag: 'durimage-rev' });
+    } else if (d.role !== 'reviewer' && d.pMine) {
+      const mine = revs.filter(function (e) { return same(e[4], d.name) && !same(e[2], d.name); });
+      if (mine.length) {
+        const g = group(mine, 2), photos = {};
+        mine.forEach(function (e) { if (e[5] !== '同意' || !photos[e[3]]) photos[e[3]] = e[5]; }); // any expert asking for a correction counts
+        const ids = Object.keys(photos), ok = ids.filter(function (k) { return photos[k] === '同意'; }).length;
+        msgs.push({ token: d.token, title: T.mineTitle, body: T.mine(g.map(function (x) { return x.who; }).join(T.sep), ids.length, ok, ids.length - ok), link: base + '?open=mine', tag: 'durimage-mine' });
+      }
+    }
+  });
+  const res = fcmSend_(props, msgs);
+  withLock_(function () { dropDevices_(root, tz, res.filter(function (r) { return r.gone; }).map(function (r) { return r.token; })); });
+}
+
+// Run once from the editor (toolbar: choose setupNotifications → Run). Safe to run again.
+function setupNotifications() {
+  const props = PropertiesService.getScriptProperties();
+  ScriptApp.getProjectTriggers().forEach(function (t) { if (t.getHandlerFunction() === 'sendNotifications') ScriptApp.deleteTrigger(t); });
+  ScriptApp.newTrigger('sendNotifications').timeBased().everyMinutes(5).create();
+  Logger.log('✅ 5-minute notification timer installed.');
+  const c = pushConfig_(props);
+  if (!c) { Logger.log('ℹ️ Push not set up yet: add FCM_SERVICE_ACCOUNT, FCM_WEB_CONFIG and FCM_VAPID_KEY in Script Properties, then run this again. In-app notices already work.'); return; }
+  try {
+    const sa = JSON.parse(props.getProperty('FCM_SERVICE_ACCOUNT'));
+    CacheService.getScriptCache().remove('fcm_token');
+    fcmToken_(sa);
+    Logger.log('✅ Firebase login OK (project ' + sa.project_id + '). Push notifications are ready.');
+  } catch (e) {
+    Logger.log('❌ Firebase login failed: ' + e + '\nCheck that FCM_SERVICE_ACCOUNT is the whole JSON file, copied exactly.');
+  }
 }

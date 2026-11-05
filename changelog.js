@@ -3,6 +3,15 @@
 // date = the real release time in UTC (the moment it is pushed), e.g. from `date -u +%Y-%m-%dT%H:%M:%SZ`.
 window.DURIMAGE_CHANGELOG = [
   {
+    version: '1.6.0',
+    date: '2026-11-05T07:55:30Z',
+    notes: {
+      zh: ['新增通知：有照片送审时通知审核员和管理员；专家审核完成时通知拍照的人，管理员收到全部审核的摘要', '手机推送每 5 分钟合并一次，不会一直响；App 里也会出现提醒，主画面图示会显示数字', '设置 → 通知：每支手机自己开关要收哪些通知'],
+      en: ['New notifications: reviewers and the admin are told when photos are sent for review; photographers are told when experts have reviewed their photos, and the admin gets a summary of all reviews', 'Phone push is merged every 5 minutes so it does not keep buzzing; notices also appear inside the app and as a number on the app icon', 'Settings → Notifications: each phone chooses which notifications it gets'],
+      ms: ['Notifikasi baharu: penyemak dan pentadbir dimaklumkan apabila foto dihantar untuk semakan; jurugambar dimaklumkan apabila pakar selesai menyemak foto mereka, dan pentadbir menerima ringkasan semua semakan', 'Push telefon digabung setiap 5 minit supaya tidak berbunyi berterusan; notis juga muncul dalam aplikasi dan sebagai nombor pada ikon aplikasi', 'Tetapan → Notifikasi: setiap telefon memilih notifikasi yang diterima'],
+    },
+  },
+  {
     version: '1.5.6',
     date: '2026-11-05T07:30:04Z',
     notes: {
