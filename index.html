@@ -99,6 +99,8 @@
     <symbol id="i-select" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="4" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="m8.5 12 2.5 2.5 4.5-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
     <symbol id="i-send" viewBox="0 0 24 24"><path d="M4 12 20 4l-6 16-2.5-6.5z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></symbol>
     <symbol id="i-review" viewBox="0 0 24 24"><path d="M6 3.5h9l3.5 3.5v13.5H6z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="m9 13 2 2 4-4.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-chev-l" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-chev-r" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></symbol>
     <symbol id="i-pen" viewBox="0 0 24 24"><path d="M4 20l1-4L16 5l3 3L8 19z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></symbol>
     <symbol id="i-hand" viewBox="0 0 24 24"><path d="M8 12V6a1.5 1.5 0 0 1 3 0v5m0-6.5a1.5 1.5 0 0 1 3 0V11m0-4.5a1.5 1.5 0 0 1 3 0V13m0-3.5a1.5 1.5 0 0 1 3 0V15a6 6 0 0 1-6 6h-1.5a6 6 0 0 1-5-2.7L4.5 14a1.6 1.6 0 0 1 2.6-1.8L8 13.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></symbol>
     <symbol id="i-ellipse" viewBox="0 0 24 24"><ellipse cx="12" cy="12" rx="8.5" ry="6" fill="none" stroke="currentColor" stroke-width="2"/></symbol>
@@ -383,7 +385,10 @@
         <h2 data-i18n="detailTitle"></h2>
         <button class="icon-btn" data-close aria-label="Close"><svg><use href="#i-x"/></svg></button>
       </div>
-      <div class="detail-img"><img id="detailImg" alt=""><span class="zoom-badge"><svg><use href="#i-zoom"/></svg></span><span id="detailBadge"></span></div>
+      <div class="detail-img"><img id="detailImg" alt=""><span class="zoom-badge"><svg><use href="#i-zoom"/></svg></span><span id="detailBadge"></span>
+        <span class="detail-pos" id="detailPos" hidden></span>
+        <button class="detail-nav prev" id="detailPrev" type="button" aria-label="Previous"><svg><use href="#i-chev-l"/></svg></button>
+        <button class="detail-nav next" id="detailNext" type="button" aria-label="Next"><svg><use href="#i-chev-r"/></svg></button></div>
       <div class="detail-err" id="detailErr" hidden></div>
       <dl class="detail-list" id="detailList"></dl>
       <section class="detail-judge" id="detailJudge"></section>

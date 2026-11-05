@@ -721,3 +721,15 @@ body.role-reviewer .team-only { display: none !important; }
 .dj-view { margin: 6px 0 0; padding-left: 0; }
 .jv-actions .btn svg { width: 15px; height: 15px; vertical-align: -2px; margin-right: 4px; }
 .sub-marks { margin-top: 10px; }
+
+/* Photo details: previous / next */
+.detail-pos { position: absolute; top: 10px; left: 10px; background: rgba(0,0,0,.55); color: #fff; font-size: 12.5px; font-weight: 600; padding: 4px 10px; border-radius: 999px; font-variant-numeric: tabular-nums; }
+.detail-nav { position: absolute; top: 50%; transform: translateY(-50%); width: 36px; height: 36px; border-radius: 50%; border: 0; background: rgba(0,0,0,.38); color: #fff; display: grid; place-items: center; padding: 0; cursor: pointer; }
+.detail-nav svg { width: 20px; height: 20px; }
+.detail-nav.prev { left: 8px; } .detail-nav.next { right: 8px; }
+.detail-nav[hidden], .detail-pos[hidden] { display: none; }
+.sheet.slide-l { animation: dSlideL .22s ease-out; }
+.sheet.slide-r { animation: dSlideR .22s ease-out; }
+@keyframes dSlideL { from { opacity: .4; transform: translateX(28px); } to { opacity: 1; transform: none; } }
+@keyframes dSlideR { from { opacity: .4; transform: translateX(-28px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .sheet.slide-l, .sheet.slide-r { animation: none; } }

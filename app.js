@@ -1219,8 +1219,45 @@
     if (item.sub && item.sub.done) fetchMyReviews(false).then(() => { if (detailId === item.id && !$('detailSheet').hidden) renderDetailReviews(item); });
     $('detailFoot').hidden = !canAct;
     $('detailRetry').hidden = !(item.status === 'error' || (item.status === 'queued' && navigator.onLine));
+    // Position in the current (filtered) list, for swiping to the previous / next photo.
+    const ids = state.visibleIds || [], at = ids.indexOf(id);
+    $('detailPos').hidden = at < 0 || ids.length < 2;
+    $('detailPos').textContent = `${at + 1} / ${ids.length}`;
+    $('detailPrev').hidden = at <= 0;
+    $('detailNext').hidden = at < 0 || at >= ids.length - 1;
     openSheet('detailSheet');
   }
+  // Swipe left / right in photo details → next / previous photo (same order as the home grid, filters applied).
+  async function detailStep(dir) {
+    const ids = state.visibleIds || [], at = ids.indexOf(detailId), to = ids[at + dir];
+    if (at < 0 || !to) return;
+    const sheet = $('detailSheet').querySelector('.sheet');
+    await openDetail(to);
+    sheet.scrollTop = 0;
+    sheet.classList.remove('slide-l', 'slide-r'); void sheet.offsetWidth;
+    sheet.classList.add(dir > 0 ? 'slide-l' : 'slide-r');
+  }
+  $('detailPrev').addEventListener('click', (e) => { e.stopPropagation(); detailStep(-1); });
+  $('detailNext').addEventListener('click', (e) => { e.stopPropagation(); detailStep(1); });
+  (() => {
+    const sheet = $('detailSheet').querySelector('.sheet');
+    let sx = 0, sy = 0, st = 0, on = false;
+    sheet.addEventListener('touchstart', (e) => {
+      on = e.touches.length === 1 && !e.target.closest('input, textarea, .switch');
+      if (on) { sx = e.touches[0].clientX; sy = e.touches[0].clientY; st = Date.now(); }
+    }, { passive: true });
+    sheet.addEventListener('touchmove', (e) => { if (e.touches.length > 1) on = false; }, { passive: true });
+    sheet.addEventListener('touchend', (e) => {
+      if (!on) return; on = false;
+      const dx = e.changedTouches[0].clientX - sx, dy = e.changedTouches[0].clientY - sy;
+      if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.8 && Date.now() - st < 800) detailStep(dx < 0 ? 1 : -1);
+    });
+    sheet.addEventListener('animationend', () => sheet.classList.remove('slide-l', 'slide-r'));
+    document.addEventListener('keydown', (e) => {
+      if ($('detailSheet').hidden || !$('viewer').hidden || /INPUT|TEXTAREA/.test(document.activeElement.tagName)) return;
+      if (e.key === 'ArrowRight') detailStep(1); else if (e.key === 'ArrowLeft') detailStep(-1);
+    });
+  })();
   $('detailImg').closest('.detail-img').addEventListener('click', async () => {
     const orig = detailId ? await getBlob(detailId) : null; // still on the phone = full resolution
     if (orig) { const u = URL.createObjectURL(orig); openViewer(u, u); }

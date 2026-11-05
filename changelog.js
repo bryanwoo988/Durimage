@@ -3,6 +3,15 @@
 // date = the real release time in UTC (the moment it is pushed), e.g. from `date -u +%Y-%m-%dT%H:%M:%SZ`.
 window.DURIMAGE_CHANGELOG = [
   {
+    version: '1.5.2',
+    date: '2026-11-05T06:10:58Z',
+    notes: {
+      zh: ['照片详情可以左右滑动，直接看上一张、下一张（跟首页一样的顺序，有筛选时只在筛选结果里切换），照片上也有左右箭头和「第几张 / 共几张」', '登录画面改成「输入密码」：拍照的人输入团队密码，审核员输入审核密码，App 按密码自动分辨身份'],
+      en: ['Swipe left or right in photo details to see the previous or next photo (same order as the home screen; only within the filter results when a filter is on). The photo also shows arrows and "n / total"', 'The login screen now says "Enter password": photographers use the team password, reviewers the review password, and the app knows the role from the password'],
+      ms: ['Leret ke kiri atau kanan dalam butiran foto untuk melihat foto sebelum atau seterusnya (susunan sama seperti skrin utama; hanya dalam hasil penapis jika penapis aktif). Foto juga menunjukkan anak panah dan "n / jumlah"', 'Skrin log masuk kini berkata "Masukkan kata laluan": jurugambar guna kata laluan pasukan, penyemak guna kata laluan semakan, dan aplikasi mengenal peranan daripada kata laluan'],
+    },
+  },
+  {
     version: '1.5.1',
     date: '2026-11-05T06:02:03Z',
     notes: {
