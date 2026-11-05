@@ -136,7 +136,7 @@
     toastTimer = setTimeout(() => { el.className = 'toast'; }, 2800);
   }
   const openSheet = (id) => { clearTimeout(toastTimer); $('toast').className = 'toast'; $(id).hidden = false; };
-  const closeSheet = (id) => { $(id).hidden = true; if (id === 'detailSheet' || id === 'reviewSheet') { const v = $('viewer'); if (v && !v.hidden) closeViewer(); } };
+  const closeSheet = (id) => { $(id).hidden = true; if (id === 'detailSheet') state.detailOrder = null; if (id === 'detailSheet' || id === 'reviewSheet') { const v = $('viewer'); if (v && !v.hidden) closeViewer(); } };
   document.querySelectorAll('.sheet-backdrop').forEach((bd) => {
     bd.addEventListener('click', (e) => {
       const outside = e.target === bd;
@@ -145,6 +145,7 @@
         bd.hidden = true;
         if (bd.id === 'reviewSheet') { resetReview(); maybeReload(); }
         if (bd.id === 'orchardSheet' || bd.id === 'treeSheet') pendingCamera = false;
+        if (bd.id === 'detailSheet') state.detailOrder = null;
       }
     });
   });
@@ -1227,8 +1228,10 @@
     if (item.sub && item.sub.done) fetchMyReviews(false).then(() => { if (detailId === item.id && !$('detailSheet').hidden) renderDetailReviews(item); });
     $('detailFoot').hidden = !canAct;
     $('detailRetry').hidden = !(item.status === 'error' || (item.status === 'queued' && navigator.onLine));
-    // Position in the current (filtered) list, for swiping to the previous / next photo.
-    const ids = state.visibleIds || [], at = ids.indexOf(id);
+    // Position in the list as it was when the details were opened, for swiping to the previous / next photo.
+    // (Kept fixed: saving a judgement or sending can move a photo out of a filter, and swiping must still work.)
+    if (!(state.detailOrder || []).includes(id)) state.detailOrder = (state.visibleIds || []).slice();
+    const ids = state.detailOrder, at = ids.indexOf(id);
     $('detailPos').hidden = at < 0 || ids.length < 2;
     $('detailPos').textContent = `${at + 1} / ${ids.length}`;
     $('detailPrev').hidden = at <= 0;
@@ -1237,7 +1240,7 @@
   }
   // Swipe left / right in photo details → next / previous photo (same order as the home grid, filters applied).
   async function detailStep(dir) {
-    const ids = state.visibleIds || [], at = ids.indexOf(detailId), to = ids[at + dir];
+    const ids = state.detailOrder || [], at = ids.indexOf(detailId), to = ids[at + dir];
     if (at < 0 || !to) return;
     const sheet = $('detailSheet').querySelector('.sheet');
     await openDetail(to); // quick repeated swipes chain; the newest one wins

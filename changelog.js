@@ -3,6 +3,15 @@
 // date = the real release time in UTC (the moment it is pushed), e.g. from `date -u +%Y-%m-%dT%H:%M:%SZ`.
 window.DURIMAGE_CHANGELOG = [
   {
+    version: '1.6.1',
+    date: '2026-11-05T11:19:06Z',
+    notes: {
+      zh: ['首页开着筛选时，在照片详情保存初步判断或送审后，照片会离开筛选结果，左右滑动就失效了；现在会照打开时的顺序继续滑'],
+      en: ['With a home-screen filter on, saving a judgement or sending a photo could move it out of the filter and stop left/right swiping in photo details; swiping now keeps the order from when the details were opened'],
+      ms: ['Dengan penapis skrin utama aktif, menyimpan penilaian atau menghantar foto boleh mengeluarkannya daripada penapis dan menghentikan leretan dalam butiran foto; leretan kini mengekalkan susunan semasa butiran dibuka'],
+    },
+  },
+  {
     version: '1.6.0',
     date: '2026-11-05T07:55:30Z',
     notes: {
