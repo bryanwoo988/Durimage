@@ -3,6 +3,15 @@
 // date = the real release time in UTC (the moment it is pushed), e.g. from `date -u +%Y-%m-%dT%H:%M:%SZ`.
 window.DURIMAGE_CHANGELOG = [
   {
+    version: '1.5.4',
+    date: '2026-11-05T06:49:48Z',
+    notes: {
+      zh: ['照片详情左右滑动更顺：画面不会再跳一下，换照片时也不会闪白或闪出破图'],
+      en: ['Smoother swiping in photo details: the panel no longer jumps, and no blank or broken image flashes while changing photos'],
+      ms: ['Leretan lebih lancar dalam butiran foto: panel tidak lagi melompat, dan tiada imej kosong atau rosak berkelip semasa menukar foto'],
+    },
+  },
+  {
     version: '1.5.3',
     date: '2026-11-05T06:28:40Z',
     notes: {

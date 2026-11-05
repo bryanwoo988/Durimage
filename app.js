@@ -1184,10 +1184,15 @@
     const item = state.items.find((i) => i.id === id);
     if (!item) return;
     detailId = id;
-    if (detailUrl) { URL.revokeObjectURL(detailUrl); detailUrl = null; }
+    const oldUrl = detailUrl;
     const blob = (await getBlob(id + '_p')) || (await getBlob(id));
-    if (blob) detailUrl = URL.createObjectURL(blob);
+    detailUrl = blob ? URL.createObjectURL(blob) : null;
+    // Decode the new photo first, then swap: no blank / broken frame while swiping.
+    const pre = new Image(); pre.src = detailUrl || item.thumb;
+    await pre.decode().catch(() => {});
+    if (detailId !== id) { if (detailUrl) URL.revokeObjectURL(detailUrl); return; } // a newer swipe won
     $('detailImg').src = detailUrl || item.thumb;
+    if (oldUrl) URL.revokeObjectURL(oldUrl);
     const badge = $('detailBadge');
     badge.className = 'tile-badge b-' + item.status;
     badge.textContent = t(item.status);
@@ -1233,10 +1238,13 @@
     const ids = state.visibleIds || [], at = ids.indexOf(detailId), to = ids[at + dir];
     if (at < 0 || !to) return;
     const sheet = $('detailSheet').querySelector('.sheet');
-    await openDetail(to);
+    await openDetail(to); // quick repeated swipes chain; the newest one wins
+    if (detailId !== to) return;
     sheet.scrollTop = 0;
+    // Only the content slides; the sheet itself keeps still (its own open animation must not replay).
     sheet.classList.remove('slide-l', 'slide-r'); void sheet.offsetWidth;
     sheet.classList.add(dir > 0 ? 'slide-l' : 'slide-r');
+    clearTimeout(detailStep.t); detailStep.t = setTimeout(() => sheet.classList.remove('slide-l', 'slide-r'), 300);
   }
   $('detailPrev').addEventListener('click', (e) => { e.stopPropagation(); detailStep(-1); });
   $('detailNext').addEventListener('click', (e) => { e.stopPropagation(); detailStep(1); });
@@ -1253,7 +1261,6 @@
       const dx = e.changedTouches[0].clientX - sx, dy = e.changedTouches[0].clientY - sy;
       if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.8 && Date.now() - st < 800) detailStep(dx < 0 ? 1 : -1);
     });
-    sheet.addEventListener('animationend', () => sheet.classList.remove('slide-l', 'slide-r'));
     document.addEventListener('keydown', (e) => {
       if ($('detailSheet').hidden || !$('viewer').hidden || /INPUT|TEXTAREA/.test(document.activeElement.tagName)) return;
       if (e.key === 'ArrowRight') detailStep(1); else if (e.key === 'ArrowLeft') detailStep(-1);

@@ -728,8 +728,9 @@ body.role-reviewer .team-only { display: none !important; }
 .detail-nav svg { width: 20px; height: 20px; }
 .detail-nav.prev { left: 8px; } .detail-nav.next { right: 8px; }
 .detail-nav[hidden], .detail-pos[hidden] { display: none; }
-.sheet.slide-l { animation: dSlideL .22s ease-out; }
-.sheet.slide-r { animation: dSlideR .22s ease-out; }
+#detailSheet .sheet.slide-l > :not(.sheet-grip):not(.sheet-head) { animation: dSlideL .22s ease-out; }
+#detailSheet .sheet.slide-r > :not(.sheet-grip):not(.sheet-head) { animation: dSlideR .22s ease-out; }
 @keyframes dSlideL { from { opacity: .4; transform: translateX(28px); } to { opacity: 1; transform: none; } }
 @keyframes dSlideR { from { opacity: .4; transform: translateX(-28px); } to { opacity: 1; transform: none; } }
-@media (prefers-reduced-motion: reduce) { .sheet.slide-l, .sheet.slide-r { animation: none; } }
+@media (prefers-reduced-motion: reduce) { #detailSheet .sheet.slide-l > *, #detailSheet .sheet.slide-r > * { animation: none; } }
+#detailSheet .sheet { overflow-x: hidden; }
