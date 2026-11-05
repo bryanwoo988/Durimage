@@ -1624,7 +1624,7 @@
     revState.loading = true; $('revCount').textContent = t('loading');
     try {
       const r = await api({ action: 'queue', key: state.password, tz: tzName(), reviewer: state.role === 'reviewer' ? state.revName : '' });
-      if (r.ok) { revState.items = r.items || []; revState.loaded = true; }
+      if (r.ok) { revState.items = r.items || []; revState.loaded = true; mergeOutbox(); }
       else if (r.error === 'bad_key') passwordRejected();
       else toast(t('serverErr'), true);
     } catch (e) { console.error(e); toast(t('serverErr'), true); }
@@ -1773,23 +1773,62 @@
   };
   $('rvImgBox').onclick = () => { if (rv.src) openViewer(rv.src, null, [...asRef(rvRef()), ...rv.marks]); };
   $('rvDraw').onclick = () => { if (rv.src) openEditor(rv.src, rv.marks, (m) => { rv.marks = m; drawRvMarks(); }, rvJudge.get().labels, rvRef()); };
+  // Sending a review is instant for the reviewer: it is saved on the phone (outbox), the sheet closes at once,
+  // and it is sent in the background (retried when back online / next time the app opens).
+  const OUTBOX = 'revOutbox';
+  const outbox = () => store.get(OUTBOX, []);
+  const uid = () => (crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2));
+  function saveOutbox(list) {
+    try { localStorage.setItem('dm_' + OUTBOX, JSON.stringify(list)); }
+    catch { store.set(OUTBOX, list.map((x) => ({ ...x, markPng: '' }))); } // phone storage full: keep the review, drop the marked copy
+  }
+  function mergeOutbox() { // reviews not sent yet still count as done on this phone
+    for (const p of outbox()) {
+      const s = revState.items.find((x) => x.id === p.subId);
+      if (s && !(s.reviews || []).some((r) => r.cid === p.cid)) { (s.reviews = s.reviews || []).push(p.local); s.reviewCount = latestPer(s.reviews).length; }
+    }
+  }
+  let revFlushing = false;
+  async function flushReviews() {
+    if (revFlushing || !navigator.onLine || !state.password || !outbox().length) return;
+    revFlushing = true;
+    try {
+      for (const p of outbox()) {
+        const { local, ...body } = p;
+        let res;
+        try { res = await api({ ...body, action: 'review', key: state.password, tz: tzName() }); } catch (e) { console.error(e); break; } // offline / timeout: try later
+        if (!res.ok && res.error === 'bad_key') { passwordRejected(); break; }
+        if (!res.ok && res.error !== 'marks_too_big' && res.error !== 'bad_review') break; // server busy: try later
+        if (!res.ok) toast(t('marksTooBig'), true);
+        saveOutbox(outbox().filter((x) => x.cid !== p.cid));
+        if (res.ok && local) local.version = res.version || local.version;
+      }
+    } finally {
+      revFlushing = false;
+      const left = outbox().length;
+      if (left && !navigator.onLine) toast(t('revQueued', { n: left }));
+    }
+  }
   $('rvSubmit').onclick = async () => {
     if (!rv.verdict) { toast(t('pickVerdict'), true); return; }
-    if (!navigator.onLine) { toast(t('revNeedNet'), true); return; }
-    const j = rvJudge.get(), s = rv.sub, btn = $('rvSubmit');
-    btn.disabled = true; btn.textContent = t('sending');
-    try {
-      const marks = rv.marks.map((m) => ({ ...m, p: m.p.map((q) => [Math.round(q[0] * 10000) / 10000, Math.round(q[1] * 10000) / 10000]) }));
-      let markPng = '';
-      if (marks.length && rv.src) { try { markPng = await flattenMarks(rv.src, marks); } catch {} }
-      const res = await api({ action: 'review', key: state.password, tz: tzName(), subId: s.id, reviewer: myName(), verdict: rv.verdict,
-        labels: j.labels, labelText: j.text, comment: $('rvComment').value.trim(), marks, markPng, photoName: s.name });
-      if (!res.ok) { toast(t(res.error === 'marks_too_big' ? 'marksTooBig' : 'serverErr'), true); return; }
-      (s.reviews = s.reviews || []).push({ at: new Date().toISOString(), reviewer: myName(), verdict: rv.verdict, labels: j.labels, labelText: j.text, comment: $('rvComment').value.trim(), marks, version: res.version || 1 });
-      s.reviewCount = latestPer(s.reviews).length;
-      closeSheet('revSheet'); renderQueue(); toast(t('reviewSaved'));
-    } catch (e) { console.error(e); toast(t('serverErr'), true); }
-    finally { btn.disabled = false; btn.textContent = t('submitReview'); }
+    const j = rvJudge.get(), s = rv.sub, src = rv.src;
+    const marks = rv.marks.map((m) => ({ ...m, p: m.p.map((q) => [Math.round(q[0] * 10000) / 10000, Math.round(q[1] * 10000) / 10000]) }));
+    const comment = $('rvComment').value.trim(), cid = uid();
+    const prev = (s.reviews || []).filter((r) => String(r.reviewer).trim().toLowerCase() === myName().trim().toLowerCase()).length;
+    const local = { cid, at: new Date().toISOString(), reviewer: myName(), verdict: rv.verdict, labels: j.labels, labelText: j.text, comment, marks, version: prev + 1 };
+    (s.reviews = s.reviews || []).push(local);
+    s.reviewCount = latestPer(s.reviews).length;
+    const entry = { cid, subId: s.id, reviewer: myName(), verdict: rv.verdict, labels: j.labels, labelText: j.text, comment, marks, markPng: '', photoName: s.name, local };
+    saveOutbox([...outbox(), entry]);
+    closeSheet('revSheet'); renderQueue(); toast(t(navigator.onLine ? 'reviewSaved' : 'revQueued', { n: outbox().length }));
+    // The marked copy for Drive is drawn after the sheet has closed.
+    if (marks.length && src) {
+      try {
+        const png = await flattenMarks(src, marks, 1600);
+        saveOutbox(outbox().map((x) => (x.cid === cid ? { ...x, markPng: png } : x)));
+      } catch {}
+    }
+    flushReviews();
   };
 
   // ---------- Drawing editor ----------
@@ -2068,9 +2107,9 @@
     render(); toast(t('historyCleared'));
   };
 
-  window.addEventListener('online', () => { render(); processQueue(); flushSubmissions(); loadCats(); });
+  window.addEventListener('online', () => { render(); processQueue(); flushSubmissions(); flushReviews(); loadCats(); });
   window.addEventListener('offline', render);
-  document.addEventListener('visibilitychange', () => { if (!document.hidden) { setAppHeight(); if (state.role !== 'reviewer') { maybeAskNewDay(); if (state.password) gpsStart(); flushSubmissions(); fetchMyReviews(false); } processQueue(); checkForUpdate(false); maybeReload(); } });
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) { setAppHeight(); if (state.role !== 'reviewer') { maybeAskNewDay(); if (state.password) gpsStart(); flushSubmissions(); fetchMyReviews(false); } processQueue(); flushReviews(); checkForUpdate(false); maybeReload(); } });
 
   // iPhone home-screen apps: after the keyboard closes, the window can stay shrunk (bottom bar
   // floats up, strip at the bottom). Scrolling back to the top once the last field loses focus
@@ -2132,7 +2171,7 @@
     if (!state.onboardMode) {
       maybeShowWhatsNew();
       loadCats();
-      if (state.role !== 'reviewer') { maybeAskNewDay(); gpsStart(); flushSubmissions(); fetchMyReviews(true); }
+      if (state.role !== 'reviewer') { maybeAskNewDay(); gpsStart(); flushSubmissions(); fetchMyReviews(true); } flushReviews();
     }
     setupServiceWorker();
     hideSplash();

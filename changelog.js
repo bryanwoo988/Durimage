@@ -3,6 +3,15 @@
 // date = the real release time in UTC (the moment it is pushed), e.g. from `date -u +%Y-%m-%dT%H:%M:%SZ`.
 window.DURIMAGE_CHANGELOG = [
   {
+    version: '1.5.5',
+    date: '2026-11-05T07:10:46Z',
+    notes: {
+      zh: ['审核员按「送出审核」后马上关闭、马上可以审下一张，审核在后台送出，不用等', '没有网络也可以送出审核：先存在手机里，有网络时自动送出'],
+      en: ['After "Send review" the panel closes at once and the next photo can be reviewed right away; the review is sent in the background', 'Reviews can be sent without a connection: they are kept on the phone and sent automatically when online'],
+      ms: ['Selepas "Hantar semakan" panel ditutup serta-merta dan foto seterusnya boleh disemak terus; semakan dihantar di latar belakang', 'Semakan boleh dihantar tanpa talian: disimpan dalam telefon dan dihantar secara automatik apabila ada talian'],
+    },
+  },
+  {
     version: '1.5.4',
     date: '2026-11-05T06:49:48Z',
     notes: {
