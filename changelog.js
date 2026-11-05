@@ -3,6 +3,15 @@
 // date = the real release time in UTC (the moment it is pushed), e.g. from `date -u +%Y-%m-%dT%H:%M:%SZ`.
 window.DURIMAGE_CHANGELOG = [
   {
+    version: '1.7.3',
+    date: '2026-11-05T23:55:10Z',
+    notes: {
+      zh: ['全面检查后的修正：审核中心和首页的「选择」工具列，离开那个画面后不会再浮在别的画面上', '设置里的「清除记录」会先确认，而且不会清掉还没送审完成的照片', '手机保留 1000 张照片时，不会清掉还在排队送审的照片', '送审途中按「撤回送审」，现在会正确撤回', '审核员送出的照片如果已被移除或撤回，提示会说清楚原因'],
+      en: ['Fixes from a full check: the "Select" bar of the home screen / review hub no longer floats over the other screen', '"Clear history" in Settings now asks first and keeps photos still waiting to be sent for review', 'Keeping the last 1000 photos never drops a photo still queued for review', 'Withdrawing while the submission is being sent now withdraws it properly', 'Reviews of a photo that was removed or withdrawn now say why they were not sent'],
+      ms: ['Pembaikan daripada semakan penuh: bar "Pilih" skrin utama / pusat semakan tidak lagi terapung di atas skrin lain', '"Kosongkan sejarah" dalam Tetapan kini bertanya dahulu dan menyimpan foto yang masih menunggu dihantar untuk semakan', 'Menyimpan 1000 foto terakhir tidak lagi membuang foto yang masih beratur untuk semakan', 'Menarik balik semasa penghantaran sedang berjalan kini berfungsi dengan betul', 'Semakan untuk foto yang telah dialih keluar atau ditarik balik kini menyatakan sebabnya'],
+    },
+  },
+  {
     version: '1.7.2',
     date: '2026-11-05T15:03:14Z',
     notes: {

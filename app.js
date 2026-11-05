@@ -1041,7 +1041,7 @@
   }
 
   async function trimHistory() {
-    const done = state.items.filter((i) => i.status === 'done').sort((a, b) => b.createdAt - a.createdAt);
+    const done = state.items.filter((i) => i.status === 'done' && !(i.sub && !i.sub.done)).sort((a, b) => b.createdAt - a.createdAt); // pending submissions are kept
     const drop = done.slice(1000); // keep the last 1000 uploaded photos (preview + details) for browsing
     for (const old of drop) { await delItem(old.id); await delBlob(old.id + '_p'); }
     const ids = new Set(drop.map((i) => i.id));
@@ -1406,7 +1406,10 @@
         const items = await Promise.all(chunk.map(async (i) => ({ ...subPayload(i), thumb: await fitThumbUrl(i.thumb).catch(() => '') })));
         const res = await api({ action: 'submit', key: state.password, tz: tzName(), items });
         if (!res.ok) { if (res.error === 'bad_key') passwordRejected(); break; }
-        for (const i of chunk) { i.sub.done = true; i.sub.at = new Date().toISOString(); await putItem(i); }
+        for (const i of chunk) {
+          if (!i.sub) { api({ action: 'withdraw', key: state.password, tz: tzName(), subId: i.id, by: state.name }).catch(() => {}); continue; } // withdrawn while it was being sent
+          i.sub.done = true; i.sub.at = new Date().toISOString(); await putItem(i);
+        }
       }
     } catch (e) { console.error(e); } finally { flushing = false; render(); }
   }
@@ -1616,8 +1619,8 @@
   $('selCancel').onclick = () => { state.selecting = false; state.selected.clear(); render(); };
   $('selAll').onclick = () => { (state.visibleIds || []).forEach((id) => state.selected.add(id)); render(); };
   $('selSubmit').onclick = async () => {
-    const items = state.items.filter((i) => state.selected.has(i.id));
-    if (!items.length) return;
+    const items = state.items.filter((i) => state.selected.has(i.id) && !i.removed);
+    if (!items.length) { toast(t('photoRemoved'), true); return; }
     const noJudge = items.filter((i) => !i.judge).length;
     if (noJudge && !confirm(t('noJudgeConfirm', { n: noJudge }))) return;
     await markForReview(items);
@@ -1806,8 +1809,9 @@
     if (revState.selecting) { const id = b.dataset.sid; if (revState.sel.has(id)) revState.sel.delete(id); else revState.sel.add(id); renderQueue(); return; }
     openRevSheet(revState.items.find((s) => s.id === b.dataset.sid));
   };
-  $('adminHubBtn').onclick = () => { hubOpen = true; applyRole(); window.scrollTo(0, 0); revState.tab = 'todo'; loadQueue(); };
-  $('revBack').onclick = () => { hubOpen = false; applyRole(); render(); window.scrollTo(0, 0); };
+  // Each screen's "select" mode ends when leaving that screen (its bar floats above everything).
+  $('adminHubBtn').onclick = () => { state.selecting = false; state.selected.clear(); renderSelectBar(); hubOpen = true; applyRole(); window.scrollTo(0, 0); revState.tab = 'todo'; loadQueue(); };
+  $('revBack').onclick = () => { revState.selecting = false; revState.sel = new Set(); $('revSelBar').hidden = true; hubOpen = false; applyRole(); render(); window.scrollTo(0, 0); };
 
   // ---------- Reviewing one photo ----------
   let rv = { sub: null, src: null, marks: [], verdict: null };
@@ -1914,7 +1918,7 @@
         try { res = await api({ ...body, action: 'review', key: state.password, tz: tzName() }); } catch (e) { console.error(e); break; } // offline / timeout: try later
         if (!res.ok && res.error === 'bad_key') { passwordRejected(); break; }
         if (!res.ok && res.error !== 'marks_too_big' && res.error !== 'bad_review' && res.error !== 'removed') break; // server busy: try later
-        if (!res.ok) toast(t(res.error === 'removed' ? 'photoRemoved' : 'marksTooBig'), true);
+        if (!res.ok) toast(t(res.error === 'removed' ? 'photoGone' : 'marksTooBig'), true);
         saveOutbox(outbox().filter((x) => x.cid !== p.cid));
         if (res.ok && local) local.version = res.version || local.version;
       }
@@ -2284,6 +2288,7 @@
   async function withdrawSub(item) {
     if (!confirm(t('withdrawConfirm'))) return;
     if (item.sub && !item.sub.done) { item.sub = null; await putItem(item); renderDetailJudge(item); render(); toast(t('withdrawn')); return; }
+    if (!navigator.onLine && !DEMO) { toast(t('needNet'), true); return; }
     try {
       const r = await api({ action: 'withdraw', key: state.password, tz: tzName(), subId: item.id, by: state.name });
       if (!r.ok) {
@@ -2604,8 +2609,11 @@
   $('editNameBtn').onclick = () => { closeSheet('settingsSheet'); showOnboard('editName'); };
   $('reenterPwBtn').onclick = () => { closeSheet('settingsSheet'); showOnboard('reenter'); };
   $('clearHistoryBtn').onclick = async () => {
-    for (const i of state.items.filter((x) => x.status === 'done')) { await delItem(i.id); await delBlob(i.id + '_p'); }
-    state.items = state.items.filter((x) => x.status !== 'done');
+    const gone = state.items.filter((x) => x.status === 'done' && !(x.sub && !x.sub.done)); // photos still to be sent for review stay
+    if (!gone.length || !confirm(t('clearHistoryConfirm', { n: gone.length }))) return;
+    for (const i of gone) { await delItem(i.id); await delBlob(i.id + '_p'); }
+    const ids = new Set(gone.map((i) => i.id));
+    state.items = state.items.filter((x) => !ids.has(x.id));
     render(); toast(t('historyCleared'));
   };
 
