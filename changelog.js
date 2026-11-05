@@ -3,6 +3,15 @@
 // date = the real release time in UTC (the moment it is pushed), e.g. from `date -u +%Y-%m-%dT%H:%M:%SZ`.
 window.DURIMAGE_CHANGELOG = [
   {
+    version: '1.5.0',
+    date: '2026-11-05T05:22:32Z',
+    notes: {
+      zh: ['专家审核：拍照时可以填初步判断（多选 + 手写 + 确定/不确定），保存后送审，或在首页「选择」多张一起送审', '审核员用审核密码登录：待审核清单、放大照片、同意或改正、手写补充、留言，还能在照片上画圈、框、箭头和画笔标注', '审核员之间看不到彼此的结果；管理员在「审核中心」看得到所有专家的意见和分歧，也能管理病虫害清单', '拍照的人在照片详情看得到专家审核结果和标注', '首页新增筛选：按果园、树、病虫害、日期、状态、文件夹，或搜索；手机保留最近 1000 张照片'],
+      en: ['Expert review: add a first judgement when saving (multi-select + free text + sure/unsure), send it for review, or select several photos on the home screen and send them together', 'Reviewers sign in with the review password: list of photos to review, zoom, agree or correct, write in categories, comment, and draw circles, boxes, arrows and pen marks on the photo', 'Reviewers cannot see each other; the admin sees every expert and any disagreement in the Review hub, and manages the pest/disease list', 'Photographers see expert reviews and marks in the photo details', 'Home screen filter: orchard, tree, pest, date, status, folder or search; the phone keeps the last 1000 photos'],
+      ms: ['Semakan pakar: tambah penilaian awal semasa menyimpan (pilihan berbilang + teks bebas + pasti/tidak pasti), hantar untuk semakan, atau pilih beberapa foto di skrin utama dan hantar bersama', 'Penyemak log masuk dengan kata laluan semakan: senarai foto, zum, setuju atau betulkan, tulis kategori, komen, dan lukis bulatan, kotak, anak panah dan pen pada foto', 'Penyemak tidak dapat melihat satu sama lain; pentadbir melihat semua pakar dan perbezaan pendapat di Pusat semakan, serta mengurus senarai perosak/penyakit', 'Jurugambar melihat semakan dan tanda pakar dalam butiran foto', 'Penapis di skrin utama: kebun, pokok, perosak, tarikh, status, folder atau carian; telefon menyimpan 1000 foto terakhir'],
+    },
+  },
+  {
     version: '1.4.4',
     date: '2026-11-05T04:37:29Z',
     notes: {
