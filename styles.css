@@ -526,8 +526,10 @@ html.vp-gap .dock { padding-bottom: 10px; }
 
 /* "Next tree" in the dock: big target, usable one-handed / with gloves */
 .dock-next { color: var(--ink); }
-.dock-next .next-ic { width: 46px; height: 46px; border-radius: 15px; display: grid; place-items: center; background: var(--gold); color: #2b1a00; box-shadow: 0 4px 12px rgba(242,181,44,.35); }
-.dock-next .next-ic svg { width: 26px; height: 26px; color: #2b1a00; }
+.dock-next { padding: 6px 16px; }
+/* same height as the other dock icons so the bar does not grow; wide pill keeps it easy to hit */
+.dock-next .next-ic { width: 56px; height: 34px; margin-top: -8px; border-radius: 12px; display: grid; place-items: center; background: var(--gold); color: #2b1a00; box-shadow: 0 4px 12px rgba(242,181,44,.35); }
+.dock-next .next-ic svg { width: 24px; height: 24px; color: #2b1a00; }
 .dock-next:active .next-ic { transform: scale(.94); }
 
 .text-input { width: 100%; height: 50px; font: inherit; font-size: 16px; color: var(--ink); background: var(--surface-2); border: 1.5px solid var(--line); border-radius: 14px; padding: 0 14px; text-transform: uppercase; }
@@ -553,3 +555,8 @@ html.vp-gap .dock { padding-bottom: 10px; }
 .tm-desc { margin-top: 8px; }
 .rm-old .set-title { word-break: normal; overflow-wrap: anywhere; }
 .tree-val.warn { color: var(--red); font-size: 16px; }
+.gps-line.good svg { color: var(--green-600); }
+.gps-line.meh svg, .gps-line.meh { color: var(--gold-ink); }
+.gps-line.bad svg, .gps-line.bad { color: var(--red); }
+.gps-warn { margin-top: 8px; padding: 10px 12px; border-radius: 12px; background: var(--red-100); color: var(--red); font-size: 13px; line-height: 1.45; }
+.tile-badge.b-done { padding: 4px; }

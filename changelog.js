@@ -3,6 +3,15 @@
 // date = the real release time in UTC (the moment it is pushed), e.g. from `date -u +%Y-%m-%dT%H:%M:%SZ`.
 window.DURIMAGE_CHANGELOG = [
   {
+    version: '1.4.2',
+    date: '2026-11-05T01:09:10Z',
+    notes: {
+      zh: ['GPS 更准确：一按快门就开始定位，持续更新，只留最准的那一笔；误差很大时会提示', '首页底部导航栏恢复原本高度', '一次选很多照片时保存更快、更省电', '缩图的「已上传」改成只显示打勾，不会再被时间挤掉'],
+      en: ['More accurate GPS: starts when you tap the shutter, keeps updating and keeps the best fix; warns when it is far off', 'Bottom bar back to its normal height', 'Saving many photos at once is faster and uses less battery', 'Uploaded photos show a tick instead of squeezed text'],
+      ms: ['GPS lebih tepat: bermula bila butang kamera ditekan, terus dikemas kini dan simpan bacaan terbaik; beri amaran jika jauh tersasar', 'Bar bawah kembali ke ketinggian biasa', 'Menyimpan banyak foto sekali gus lebih pantas dan jimat bateri', 'Foto dimuat naik menunjukkan tanda semak'],
+    },
+  },
+  {
     version: '1.4.1',
     date: '2026-11-05T00:52:43Z',
     notes: {

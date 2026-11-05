@@ -274,7 +274,7 @@
         <div class="tile-folder">${esc(i.folderName)}</div>
         ${i.note ? '<div class="tile-note"><svg><use href="#i-note"/></svg></div>' : ''}
         ${i.meta && i.meta.trainOnly ? `<div class="tile-train">${esc(t('trainOnlyShort'))}</div>` : ''}
-        <div class="tile-badge b-${i.status}">${icon}<span>${t(i.status === 'error' ? 'retry' : i.status)}</span></div>
+        <div class="tile-badge b-${i.status}" title="${esc(t(i.status))}">${icon}${i.status === 'done' ? '' : `<span>${t(i.status === 'error' ? 'retry' : i.status)}</span>`}</div>
         <div class="tile-time">${esc(timeLabel(d))}</div>
       </button>`;
     }).join('');
@@ -529,6 +529,7 @@
   // New day: continue the running number or start again from tree 1
   function maybeAskNewDay() {
     if (!state.track || !state.orchard || state.onboardMode) return;
+    if ([...document.querySelectorAll('.sheet-backdrop')].some((x) => !x.hidden)) return; // e.g. saving a photo
     const tr = treeOf(state.orchard);
     if (tr.mode !== 'seq' || tr.day === dayKey()) return;
     if (tr.seq <= 1) { tr.day = dayKey(); saveTrees(); return; }
@@ -542,6 +543,7 @@
   // Shutter: an orchard must be set first (gallery uploads may leave it empty)
   $('cameraInput').closest('label').addEventListener('click', (e) => {
     if (e.target.id === 'cameraInput') return;
+    gpsStart(); // warm up the GPS while the camera is open
     if (state.track && !state.orchard) { e.preventDefault(); pendingCamera = true; toast(t('needOrchard')); openOrchardSheet(); return; }
     const tr = state.track && state.orchard ? treeOf(state.orchard) : null;
     if (tr && tr.mode === 'tag' && !tr.tag) { e.preventDefault(); pendingCamera = true; openTreeSheet('tag', ''); $('treeHint').textContent = t('needTagFirst'); }
@@ -662,16 +664,39 @@
     state.pending = [];
   }
 
-  function captureGps() {
-    state.position = null;
-    $('gpsLine').hidden = true;
+  // ---------- GPS ----------
+  // The first position a phone reports is often a rough Wi-Fi/cell estimate (hundreds of metres to
+  // kilometres off). Keep listening and keep the best *recent* fix; start as soon as the shutter is
+  // tapped so the GPS has warmed up by the time the photo comes back from the camera.
+  const geo = { best: null, watch: null, stopTimer: null, error: null };
+  function gpsStart() {
     if (!state.gps || !navigator.geolocation) return;
-    navigator.geolocation.getCurrentPosition((p) => {
-      state.position = { lat: p.coords.latitude, lng: p.coords.longitude, acc: Math.round(p.coords.accuracy) };
-      $('gpsText').textContent = `${state.position.lat.toFixed(5)}, ${state.position.lng.toFixed(5)} (±${state.position.acc} m)`;
-      $('gpsLine').hidden = false;
-    }, () => {}, { enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 });
+    clearTimeout(geo.stopTimer);
+    geo.stopTimer = setTimeout(gpsStop, 3 * 60 * 1000); // save battery: stop 3 min after last use
+    if (geo.watch != null) return;
+    geo.error = null;
+    geo.watch = navigator.geolocation.watchPosition((p) => {
+      const fix = { lat: p.coords.latitude, lng: p.coords.longitude, acc: Math.round(p.coords.accuracy), at: Date.now() };
+      const b = geo.best;
+      // A newer fix wins unless it is clearly worse; an old fix (>20 s) is replaced anyway (the worker moves between trees).
+      if (!b || fix.acc <= Math.max(b.acc * 1.5, b.acc + 15) || fix.at - b.at > 20000) geo.best = fix;
+      renderGps();
+    }, (err) => { geo.error = err.code; renderGps(); }, { enableHighAccuracy: true, maximumAge: 0, timeout: 30000 });
   }
+  function gpsStop() { if (geo.watch != null) navigator.geolocation.clearWatch(geo.watch); geo.watch = null; }
+  const gpsFix = () => (geo.best && Date.now() - geo.best.at < 2 * 60 * 1000 ? geo.best : null);
+  function renderGps() {
+    const line = $('gpsLine');
+    const show = !$('reviewSheet').hidden && state.reviewSource === 'camera' && state.gps;
+    line.hidden = !show; $('gpsWarn').hidden = true;
+    if (!show) return;
+    const f = gpsFix();
+    if (!f) { $('gpsText').textContent = t(geo.error === 1 ? 'gpsDenied' : 'gpsSearching'); line.className = 'gps-line'; return; }
+    $('gpsText').textContent = `${f.lat.toFixed(5)}, ${f.lng.toFixed(5)} (±${f.acc} m)${f.acc > 30 ? ' · ' + t('gpsImproving') : ''}`;
+    line.className = 'gps-line ' + (f.acc <= 30 ? 'good' : f.acc <= 200 ? 'meh' : 'bad');
+    $('gpsWarn').hidden = f.acc <= 500;
+  }
+  function captureGps() { gpsStart(); renderGps(); }
 
   const PLACEHOLDER = 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><rect width="10" height="10" fill="#cfd8cf"/></svg>');
 
@@ -685,15 +710,17 @@
     bmp.close?.();
     return c;
   }
-  async function makeThumb(file) {
-    try { return (await drawScaled(file, { minEdge: 240 })).toDataURL('image/jpeg', 0.7); }
-    catch { return PLACEHOLDER; }
-  }
-  async function makePreview(file) {
+  // Thumbnail (grid) + preview (detail view) from a single decode of the original.
+  async function makeImages(file) {
     try {
       const c = await drawScaled(file, { maxEdge: 1280 });
-      return await new Promise((r) => c.toBlob(r, 'image/jpeg', 0.8));
-    } catch { return null; }
+      const k = 240 / Math.min(c.width, c.height);
+      const tc = document.createElement('canvas');
+      tc.width = Math.round(c.width * k); tc.height = Math.round(c.height * k);
+      tc.getContext('2d').drawImage(c, 0, 0, tc.width, tc.height);
+      const preview = await new Promise((r) => c.toBlob(r, 'image/jpeg', 0.8));
+      return { thumb: tc.toDataURL('image/jpeg', 0.7), preview };
+    } catch { return { thumb: PLACEHOLDER, preview: null }; }
   }
   // Only used as a fallback when sending the original straight to Drive is not possible.
   async function compress(file) {
@@ -719,7 +746,7 @@
     if (!folder) { toast(t('pickFolderFirst'), true); return; }
     const files = state.pending;
     const note = $('noteInput').value.trim();
-    const pos = state.position;
+    const pos = gpsFix(); // best recent fix at the moment of saving
     setCurrentFolder(folder.id);
     closeSheet('reviewSheet');
 
@@ -737,7 +764,7 @@
       meta ? `Use: ${isTrainOnly(meta) ? 'train-only' : 'train+test'}` : '',
       pos && source === 'camera' ? `GPS: ${pos.lat.toFixed(6)}, ${pos.lng.toFixed(6)} (±${pos.acc} m)` : '',
       pos && source === 'camera' ? `Map: https://maps.google.com/?q=${pos.lat.toFixed(6)},${pos.lng.toFixed(6)}` : '',
-      'Source: Durimage',
+      'App: Durimage',
     ].filter(Boolean).join('\n');
     let skipped = 0;
     const seenHashes = new Set(state.items.map((x) => x.sha256).filter(Boolean));
@@ -760,17 +787,17 @@
         tree = `${meta.token}-p${pad(photoNo)}`;
         meta.tree = tree; meta.trainOnly = isTrainOnly(meta);
       }
+      const imgs = await makeImages(f);
       const item = {
         id, createdAt: Date.now() + i, status: 'queued',
         folderId: folder.id, folderName: folder.name,
         name: fileName(cap.date, folder, ext, id, meta, photoNo),
-        mime: f.type || 'image/jpeg', size: f.size, description: describe(cap, meta, tree), note, thumb: await makeThumb(f),
+        mime: f.type || 'image/jpeg', size: f.size, description: describe(cap, meta, tree), note, thumb: imgs.thumb,
         capturedAt: cap.date.toISOString(), capSrc: cap.src, pos: source === 'camera' ? (pos || null) : null, by: state.name,
         meta, sha256: hash,
       };
       await putBlob(id, f); // the untouched original
-      const preview = await makePreview(f);
-      if (preview) await putBlob(id + '_p', preview); // kept after upload so the detail view still has a picture
+      if (imgs.preview) await putBlob(id + '_p', imgs.preview); // kept after upload so the detail view still has a picture
       await putItem(item);
       state.items.push(item);
       saved++;
@@ -1168,7 +1195,7 @@
   $('nativeShareBtn').onclick = () => {
     navigator.share({ title: 'Durimage', text: t('shareDesc'), url: shareUrl() }).catch(() => {});
   };
-  $('gpsToggle').onchange = (e) => { state.gps = e.target.checked; store.set('gps', state.gps); };
+  $('gpsToggle').onchange = (e) => { state.gps = e.target.checked; store.set('gps', state.gps); if (state.gps) gpsStart(); else gpsStop(); };
   $('editNameBtn').onclick = () => { closeSheet('settingsSheet'); showOnboard('editName'); };
   $('reenterPwBtn').onclick = () => { closeSheet('settingsSheet'); showOnboard('reenter'); };
   $('clearHistoryBtn').onclick = async () => {
@@ -1179,7 +1206,7 @@
 
   window.addEventListener('online', () => { render(); processQueue(); });
   window.addEventListener('offline', render);
-  document.addEventListener('visibilitychange', () => { if (!document.hidden) { setAppHeight(); maybeAskNewDay(); processQueue(); checkForUpdate(false); maybeReload(); } });
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) { setAppHeight(); maybeAskNewDay(); if (state.password) gpsStart(); processQueue(); checkForUpdate(false); maybeReload(); } });
 
   // iPhone home-screen apps: after the keyboard closes, the window can stay shrunk (bottom bar
   // floats up, strip at the bottom). Scrolling back to the top once the last field loses focus
@@ -1237,7 +1264,7 @@
     applyTheme();
     applyI18n();
     if (!needsOnboard()) { refreshFolders(false); processQueue(); }
-    if (!state.onboardMode) { maybeShowWhatsNew(); maybeAskNewDay(); }
+    if (!state.onboardMode) { maybeShowWhatsNew(); maybeAskNewDay(); gpsStart(); }
     setupServiceWorker();
     hideSplash();
     setAppHeight(); nudgeViewport();
