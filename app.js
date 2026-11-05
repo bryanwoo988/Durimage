@@ -2138,8 +2138,16 @@
     const reg = await navigator.serviceWorker.ready; // our own sw.js shows the notifications
     return fb.messaging().getToken({ vapidKey: cfg.vapidKey, serviceWorkerRegistration: reg });
   }
+  // Which kind of phone, for the server's records (Android / iPhone / iPad / computer).
+  const deviceName = () => {
+    const ua = navigator.userAgent;
+    if (/iPad/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)) return 'iPad';
+    if (/iPhone|iPod/.test(ua)) return 'iPhone' + ((ua.match(/OS (\d+)_(\d+)/) || []).length ? ' iOS ' + ua.match(/OS (\d+)_(\d+)/).slice(1).join('.') : '');
+    if (/Android/.test(ua)) return 'Android' + ((ua.match(/Android ([\d.]+)/) || [])[1] ? ' ' + ua.match(/Android ([\d.]+)/)[1] : '');
+    return /Mac/.test(ua) ? 'Mac' : /Win/.test(ua) ? 'Windows' : 'Computer';
+  };
   async function pushRegister(token) {
-    const r = await api({ action: 'pushRegister', key: state.password, tz: tzName(), token, name: myName(), prefs: notifPrefs(), lang: state.lang, url: shareUrl() });
+    const r = await api({ action: 'pushRegister', key: state.password, tz: tzName(), token, name: myName(), prefs: notifPrefs(), lang: state.lang, url: shareUrl(), device: deviceName() });
     if (r.ok) store.set('pushAt', Date.now());
     return r;
   }
@@ -2215,7 +2223,7 @@
   $('pushTestBtn').onclick = async () => {
     const b = $('pushTestBtn'); b.disabled = true;
     try {
-      const r = await api({ action: 'pushTest', key: state.password, tz: tzName(), token: store.get('pushToken', null), lang: state.lang, url: shareUrl() });
+      const r = await api({ action: 'pushTest', key: state.password, tz: tzName(), token: store.get('pushToken', null), lang: state.lang, url: shareUrl(), name: myName(), device: deviceName() });
       toast(r.ok ? t('pushTestSent') : t('pushFailed', { m: r.message || r.error || '' }), !r.ok);
     } catch { toast(t('serverErr'), true); } finally { b.disabled = false; }
   };

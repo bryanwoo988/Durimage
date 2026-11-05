@@ -110,7 +110,7 @@ SCRIPT_URL: 'https://script.google.com/macros/s/xxxxxxxx/exec',
 > **v1.5.0 改了 `Code.gs`**（审核功能），而且要在 Script Properties 新增 `REVIEW_PASSWORD` 和 `ADMIN_PASSWORD`，然后重新部署一次。
 > **v1.5.1 改了 `Code.gs`**（「送审」分页多一栏 `marksJSON`，存拍照者的标记；旧的分页会自动补上标题），请更新并重新部署一次。
 > **v1.6.0 改了 `Code.gs`**（通知）：更新代码后先在编辑器选 `setupNotifications` 按 Run 一次（会要求新的授权，装 5 分钟定时器），再重新部署。
-> **v1.6.3 改了 `Code.gs`**（推送记录分页、只在手机真的失效时才移除），请更新并重新部署（不用再按 Run）。
+> **v1.6.3 / v1.6.4 改了 `Code.gs`**（推送记录分页含设备栏、测试通知也记录、只在手机真的失效时才移除），请更新并重新部署（不用再按 Run）。
 > 只有改 `Code.gs` 的代码才需要重新部署：部署 → 管理部署 → ✏️ 编辑 → 版本选「新版本」→ 部署（网址不变）。
 
 ## 果园和树号

@@ -3,6 +3,15 @@
 // date = the real release time in UTC (the moment it is pushed), e.g. from `date -u +%Y-%m-%dT%H:%M:%SZ`.
 window.DURIMAGE_CHANGELOG = [
   {
+    version: '1.6.4',
+    date: '2026-11-05T12:08:53Z',
+    notes: {
+      zh: ['「_推送记录」多了「设备」一栏（Android / iPhone），测试通知也会记录，看得出每条通知送到哪一支手机'],
+      en: ['"_推送记录" now has a "Device" column (Android / iPhone), and test notifications are logged too, so you can see which phone each notification went to'],
+      ms: ['"_推送记录" kini ada lajur "Peranti" (Android / iPhone), dan notifikasi ujian juga direkod, jadi anda boleh lihat ke telefon mana setiap notifikasi dihantar'],
+    },
+  },
+  {
     version: '1.6.3',
     date: '2026-11-05T12:02:35Z',
     notes: {

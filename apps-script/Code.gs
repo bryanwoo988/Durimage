@@ -532,8 +532,8 @@ function json(obj) {
 //   FCM_VAPID_KEY        Cloud Messaging → Web Push certificates → key pair
 // After pasting this code: choose setupNotifications in the toolbar and press Run once (installs the 5-minute timer).
 const NQ_HEADERS = ['时间', '类型', '人', '送审ID', '拍照者', '结论'];
-const PUSH_LOG_HEADERS = ['时间', '名字', '身份', '标题', '内容', '结果'];
-const PUSH_HEADERS = ['token', '身份', '名字', '送审通知', '我的审核结果', '全部审核结果', '语言', '网址', '更新时间'];
+const PUSH_LOG_HEADERS = ['时间', '名字', '身份', '标题', '内容', '结果', '设备'];
+const PUSH_HEADERS = ['token', '身份', '名字', '送审通知', '我的审核结果', '全部审核结果', '语言', '网址', '更新时间', '设备'];
 const NOTIFY_TEXT = {
   zh: {
     sep: '、', subTitle: '有新照片要审核', sub: function (who, n) { return who + ' 提交了 ' + n + ' 张照片，请审核'; },
@@ -623,7 +623,7 @@ function fcmSend_(props, msgs) {
 function readDevices_(root, tz) {
   const sh = hiddenTab_(root, tz, '_推送', PUSH_HEADERS);
   return sh.getDataRange().getValues().slice(1).filter(function (r) { return r[0]; }).map(function (r) {
-    return { token: String(r[0]), role: String(r[1]), name: String(r[2]), pSub: r[3] !== '否', pMine: r[4] !== '否', pAll: r[5] !== '否', lang: String(r[6]) || 'zh', url: String(r[7]) };
+    return { token: String(r[0]), role: String(r[1]), name: String(r[2]), pSub: r[3] !== '否', pMine: r[4] !== '否', pAll: r[5] !== '否', lang: String(r[6]) || 'zh', url: String(r[7]), device: String(r[9] || '') };
   });
 }
 function dropDevices_(root, tz, tokens) {
@@ -643,7 +643,7 @@ function pushAction_(req, role, root, props) {
       const sh = hiddenTab_(root, req.tz, '_推送', PUSH_HEADERS), v = sh.getDataRange().getValues();
       const p = req.prefs || {}, yn = function (b) { return b === false ? '否' : '是'; };
       const row = [token, role, safe_(clip_(req.name, 40)), yn(p.sub), yn(p.mine), yn(p.all), ['zh', 'en', 'ms'].indexOf(req.lang) >= 0 ? req.lang : 'zh',
-        clip_(req.url, 300).replace(/[?#].*$/, ''), new Date()];
+        clip_(req.url, 300).replace(/[?#].*$/, ''), new Date(), safe_(clip_(req.device, 40))];
       for (let i = 1; i < v.length; i++) if (String(v[i][0]) === token) { sh.getRange(i + 1, 1, 1, row.length).setValues([row]); return json({ ok: true }); }
       sh.appendRow(row);
       return json({ ok: true });
@@ -655,6 +655,11 @@ function pushAction_(req, role, root, props) {
     const T = NOTIFY_TEXT[req.lang] || NOTIFY_TEXT.zh;
     const r = fcmSend_(props, [{ token: token, title: T.testTitle, body: T.test, link: clip_(req.url, 300), tag: 'durimage-test' }])[0];
     if (r.gone) dropDevices_(root, req.tz, [token]);
+    try {
+      const roleName = { team: '拍照', reviewer: '审核员', admin: '管理员' };
+      hiddenTab_(root, req.tz, '_推送记录', PUSH_LOG_HEADERS).appendRow([new Date(), safe_(clip_(req.name, 40)), roleName[role] || role, T.testTitle, '（测试）',
+        r.code === 200 ? '已送出' : (r.gone ? '手机已失效，已移除 ' : '失败 ') + r.code + ' ' + r.text, safe_(clip_(req.device, 40))]);
+    } catch (e) {}
     return json(r.code === 200 ? { ok: true } : { ok: false, error: 'push_failed', message: r.code + ' ' + r.text });
   }
   return json({ ok: false, error: 'bad_action' });
@@ -710,9 +715,9 @@ function sendNotifications() {
     const roleName = { team: '拍照', reviewer: '审核员', admin: '管理员' };
     const rows = msgs.map(function (m, i) {
       const r = res[i], ok = r.code === 200;
-      return [new Date(), m.who.name, roleName[m.who.role] || m.who.role, m.title, m.body, ok ? '已送出' : (r.gone ? '手机已失效，已移除 ' : '失败 ') + r.code + (ok ? '' : ' ' + r.text)];
+      return [new Date(), m.who.name, roleName[m.who.role] || m.who.role, m.title, m.body, ok ? '已送出' : (r.gone ? '手机已失效，已移除 ' : '失败 ') + r.code + (ok ? '' : ' ' + r.text), m.who.device];
     });
-    if (!rows.length) rows.push([new Date(), '', '', '没有人需要通知', events.map(function (e) { return (e[1] === 'sub' ? '送审 ' : '审核 ') + e[2] + (e[4] && e[1] === 'rev' ? ' → ' + e[4] : ''); }).join('；').slice(0, 500), '']);
+    if (!rows.length) rows.push([new Date(), '', '', '没有人需要通知', events.map(function (e) { return (e[1] === 'sub' ? '送审 ' : '审核 ') + e[2] + (e[4] && e[1] === 'rev' ? ' → ' + e[4] : ''); }).join('；').slice(0, 500), '', '']);
     const log = hiddenTab_(root, tz, '_推送记录', PUSH_LOG_HEADERS);
     log.getRange(log.getLastRow() + 1, 1, rows.length, PUSH_LOG_HEADERS.length).setValues(rows);
     if (log.getLastRow() > 600) log.deleteRows(2, log.getLastRow() - 500); // keep the latest ~500
