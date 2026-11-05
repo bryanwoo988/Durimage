@@ -1666,6 +1666,7 @@
     let list = all.filter(revPass);
     if (revState.sort === 'old') list = list.slice().reverse();
     if (revState.sort === 'unsure') list = list.slice().sort((a, b) => (a.confident === b.confident ? 0 : a.confident ? 1 : -1));
+    revState.order = list.map((s) => s.id);
     $('revCount').textContent = revState.loading ? t('loading') : t('foundN', { n: list.length });
     $('revEmpty').hidden = list.length > 0 || revState.loading;
     $('revEmptyText').textContent = t(revState.loaded ? 'revEmpty' : 'revNotLoaded');
@@ -1731,8 +1732,16 @@
     rv.verdict = v;
     $('rvVerdict').innerHTML = [['agree', 'vAgree'], ['correct', 'vCorrect']].map(([k, l]) => `<button type="button" data-v="${k}" class="${v === k ? 'on' : ''}">${esc(t(l))}</button>`).join('');
   }
+  // The photo after this one in the list as it is shown (tab, filters, sort applied).
+  function nextInList(id, order) {
+    const at = order.indexOf(id), now = new Set(revState.order || []);
+    return order.slice(at + 1).find((x) => x !== id && now.has(x));
+  }
   async function openRevSheet(s) {
     if (!s) return;
+    // Fetch the next photo in the background while this one is being reviewed.
+    const nx = nextInList(s.id, revState.order || []);
+    if (nx && navigator.onLine) { const n = revState.items.find((x) => x.id === nx); if (n) setTimeout(() => photoUrl(n).catch(() => {}), 1500); }
     rv = { sub: s, src: null, marks: [], verdict: null };
     const im = $('rvImg'); im.removeAttribute('src'); $('rvSvg').innerHTML = '';
     $('rvLoading').textContent = t('loadingPhoto'); $('rvLoading').hidden = false;
@@ -1820,7 +1829,17 @@
     s.reviewCount = latestPer(s.reviews).length;
     const entry = { cid, subId: s.id, reviewer: myName(), verdict: rv.verdict, labels: j.labels, labelText: j.text, comment, marks, markPng: '', photoName: s.name, local };
     saveOutbox([...outbox(), entry]);
-    closeSheet('revSheet'); renderQueue(); toast(t(navigator.onLine ? 'reviewSaved' : 'revQueued', { n: outbox().length }));
+    const order = revState.order || [];
+    renderQueue();
+    const nextId = nextInList(s.id, order), next = nextId && revState.items.find((x) => x.id === nextId);
+    if (next) { // straight on to the next photo
+      $('revSheet').querySelector('.sheet').scrollTop = 0;
+      openRevSheet(next);
+      toast(t(navigator.onLine ? 'reviewSavedNext' : 'revQueued', { n: outbox().length }));
+    } else {
+      closeSheet('revSheet');
+      toast(t(navigator.onLine ? 'reviewAllDone' : 'revQueued', { n: outbox().length }));
+    }
     // The marked copy for Drive is drawn after the sheet has closed.
     if (marks.length && src) {
       try {

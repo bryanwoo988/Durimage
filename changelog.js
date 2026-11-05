@@ -3,6 +3,15 @@
 // date = the real release time in UTC (the moment it is pushed), e.g. from `date -u +%Y-%m-%dT%H:%M:%SZ`.
 window.DURIMAGE_CHANGELOG = [
   {
+    version: '1.5.6',
+    date: '2026-11-05T07:30:04Z',
+    notes: {
+      zh: ['审核员送出审核后直接跳到清单里的下一张照片，不用回清单再点；最后一张送出后才回到清单', '下一张照片会在审核当前这张时先在后台载好，换过去更快'],
+      en: ['After sending a review, the next photo in the list opens straight away; the list comes back only after the last one', 'The next photo is fetched in the background while the current one is reviewed, so it opens faster'],
+      ms: ['Selepas menghantar semakan, foto seterusnya dalam senarai dibuka terus; senarai muncul semula hanya selepas foto terakhir', 'Foto seterusnya dimuat di latar belakang semasa foto semasa disemak, jadi ia dibuka lebih cepat'],
+    },
+  },
+  {
     version: '1.5.5',
     date: '2026-11-05T07:10:46Z',
     notes: {
