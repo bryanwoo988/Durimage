@@ -3,6 +3,15 @@
 // date = the real release time in UTC (the moment it is pushed), e.g. from `date -u +%Y-%m-%dT%H:%M:%SZ`.
 window.DURIMAGE_CHANGELOG = [
   {
+    version: '1.7.0',
+    date: '2026-11-05T14:12:09Z',
+    notes: {
+      zh: ['管理员可以移除照片（随便拍、模糊、重复…）：照片搬到 Drive 的「_已移除」文件夹，不会再出现在审核清单，也不会混进训练资料', '审核中心多一个「已移除」分页，可以复原；也可以在首页或审核中心「选择」多张一起移除', '拍照的人可以「撤回送审」还没被专家审核的照片'],
+      en: ['The admin can remove photos (random shots, blurry, duplicates…): they move to the "_已移除" Drive folder, leave the review list and stay out of the training data', 'New "Removed" tab in the Review hub with Restore; several photos can be selected and removed at once', 'Photographers can withdraw a submission that no expert has reviewed yet'],
+      ms: ['Pentadbir boleh mengalih keluar foto (gambar rambang, kabur, pendua…): foto dialihkan ke folder Drive "_已移除", keluar dari senarai semakan dan tidak masuk data latihan', 'Tab "Dialih keluar" baharu di Pusat semakan dengan Pulihkan; beberapa foto boleh dipilih dan dialih keluar sekali gus', 'Jurugambar boleh menarik balik penghantaran yang belum disemak oleh pakar'],
+    },
+  },
+  {
     version: '1.6.5',
     date: '2026-11-05T12:17:38Z',
     notes: {

@@ -303,9 +303,9 @@
       const icon = i.status === 'done' ? '<svg><use href="#i-check"/></svg>' : i.status === 'error' ? '<svg><use href="#i-retry"/></svg>' : '';
       const sel = state.selecting ? ` sel-mode${state.selected.has(i.id) ? ' selected' : ''}` : '';
       const nRev = latestPer(i.reviews || []).length;
-      const revTag = !i.sub ? '' : !i.sub.done ? `<div class="tile-rev">${esc(t('subQueued'))}</div>`
+      const revTag = i.removed ? `<div class="tile-rev removed">${esc(t('removedTag'))}</div>` : !i.sub ? '' : !i.sub.done ? `<div class="tile-rev">${esc(t('subQueued'))}</div>`
         : nRev ? `<div class="tile-rev done">${esc(t('reviewedN', { n: nRev }))}</div>` : `<div class="tile-rev">${esc(t('awaitReview'))}</div>`;
-      return `${head}<button class="tile${sel}" data-id="${esc(i.id)}">${revTag}
+      return `${head}<button class="tile${sel}${i.removed ? ' tile-removed' : ''}" data-id="${esc(i.id)}">${revTag}
         <img src="${i.thumb}" alt="" loading="lazy">
         <div class="tile-folder">${esc(i.folderName)}</div>
         ${i.note ? '<div class="tile-note"><svg><use href="#i-note"/></svg></div>' : ''}
@@ -1225,6 +1225,7 @@
     const canAct = item.status !== 'done' && item.status !== 'uploading';
     renderDetailJudge(item);
     renderDetailReviews(item);
+    renderDetailAdmin(item);
     if (item.sub && item.sub.done) fetchMyReviews(false).then(() => { if (detailId === item.id && !$('detailSheet').hidden) renderDetailReviews(item); });
     $('detailFoot').hidden = !canAct;
     $('detailRetry').hidden = !(item.status === 'error' || (item.status === 'queued' && navigator.onLine));
@@ -1386,7 +1387,7 @@
   // Photos marked "send for review" go out as soon as they are in Drive (offline → later).
   async function flushSubmissions() {
     if (flushing || !navigator.onLine || !state.password || state.role === 'reviewer') return;
-    const ready = state.items.filter((i) => i.sub && i.sub.want && !i.sub.done && i.driveId && i.status === 'done');
+    const ready = state.items.filter((i) => i.sub && i.sub.want && !i.sub.done && i.driveId && i.status === 'done' && !i.removed);
     if (!ready.length) return;
     flushing = true;
     try {
@@ -1399,7 +1400,7 @@
     } catch (e) { console.error(e); } finally { flushing = false; render(); }
   }
   function markForReview(items) {
-    return Promise.all(items.map((i) => { i.sub = { want: true, done: false }; return putItem(i); }));
+    return Promise.all(items.filter((i) => !i.removed).map((i) => { i.sub = { want: true, done: false }; return putItem(i); }));
   }
   let lastRevFetch = 0;
   // Reviews of my own photos (photographer / admin).
@@ -1407,12 +1408,21 @@
     if (!navigator.onLine || !state.password || state.role === 'reviewer') return;
     if (!force && Date.now() - lastRevFetch < 60000) return;
     const subs = state.items.filter((i) => i.sub && i.sub.done);
-    if (!subs.length) return;
+    const uploaded = state.items.filter((i) => i.driveId && i.status === 'done');
+    if (!subs.length && !uploaded.length) return;
     lastRevFetch = Date.now();
     try {
-      const r = await api({ action: 'myReviews', key: state.password, tz: tzName(), ids: subs.map((i) => i.id) });
+      const r = await api({ action: 'myReviews', key: state.password, tz: tzName(), ids: subs.map((i) => i.id), files: uploaded.map((i) => i.driveId) });
       if (!r.ok) return;
       let changed = false;
+      if (r.removedFiles) { // server knows about removals (Apps Script v1.7+)
+        for (const i of uploaded) {
+          const st = (r.status || {})[i.id], rm = (st && st.status === '已移除') ? st : r.removedFiles[i.driveId];
+          if (rm && !i.removed) { i.removed = { by: rm.by || '', reason: rm.reason || '', at: rm.at || '' }; changed = true; await putItem(i); }
+          else if (!rm && i.removed) { delete i.removed; changed = true; await putItem(i); }
+          if (st && st.status === '已撤回' && i.sub && i.sub.done) { i.sub = null; changed = true; await putItem(i); }
+        }
+      }
       for (const i of subs) {
         const rv = (r.reviews || {})[i.id] || [];
         if (JSON.stringify(rv) !== JSON.stringify(i.reviews || [])) { i.reviews = rv; changed = true; await putItem(i); }
@@ -1425,13 +1435,19 @@
   function renderDetailJudge(item) {
     const box = $('detailJudge');
     if (state.role === 'reviewer') { box.innerHTML = ''; return; }
+    if (item.removed) {
+      box.innerHTML = `<div class="removed-banner">${esc(t('removedBanner'))}<small>${esc([item.removed.reason, item.removed.by].filter(Boolean).join(' · '))}</small></div>`;
+      return;
+    }
     const j = item.judge, sub = item.sub;
     const st = !sub ? '' : !sub.done ? `<span class="state-tag todo">${esc(t('subQueued'))}</span>` : `<span class="state-tag done">${esc(t('submittedAt', { d: fmtDateTime(sub.at || item.createdAt) }))}</span>`;
     box.innerHTML = `<div class="judge-view"><div class="jv-head"><b>${esc(t('myJudgement'))}</b>${st}</div>
       ${lblsHtml(j && j.labels, j && j.text, j ? j.confident : undefined)}
       ${j && (j.marks || []).length ? `<button class="btn btn-small btn-ghost dj-view" id="djView">${esc(t('viewMyMarks', { n: j.marks.length }))}</button>` : ''}
       <div class="jv-actions"><button class="btn btn-small btn-outline" id="djEdit">${esc(t('editJudge'))}</button><button class="btn btn-small btn-outline" id="djMark"><svg><use href="#i-pen"/></svg>${esc(t('markMineShort'))}</button>
-      ${!sub || sub.done ? `<button class="btn btn-small btn-primary" id="djSend">${esc(t(sub && sub.done ? 'resend' : 'sendToReview'))}</button>` : ''}</div></div>`;
+      ${!sub || sub.done ? `<button class="btn btn-small btn-primary" id="djSend">${esc(t(sub && sub.done ? 'resend' : 'sendToReview'))}</button>` : ''}
+      ${sub && !(item.reviews || []).length ? `<button class="btn btn-small btn-ghost" id="djWithdraw">${esc(t('withdraw'))}</button>` : ''}</div></div>`;
+    if ($('djWithdraw')) $('djWithdraw').onclick = () => withdrawSub(item);
     $('djEdit').onclick = () => { editJudge.set(item.judge); openSheet('judgeSheet'); };
     const photo = async () => { const b = (await getBlob(item.id + '_p')) || (await getBlob(item.id)); return b ? URL.createObjectURL(b) : item.thumb; };
     if ($('djView')) $('djView').onclick = async () => { const u = await photo(); openViewer(u, u.startsWith('blob:') ? u : null, asRef(item.judge.marks)); };
@@ -1574,6 +1590,8 @@
     $('selectBtn').classList.toggle('on', state.selecting);
     $('selCount').textContent = t('selectedN', { n: state.selected.size });
     $('selSubmit').disabled = !state.selected.size;
+    $('selRemove').hidden = state.role !== 'admin';
+    $('selRemove').disabled = !state.selected.size;
   }
   $('selectBtn').onclick = () => { state.selecting = !state.selecting; state.selected.clear(); render(); };
   $('selCancel').onclick = () => { state.selecting = false; state.selected.clear(); render(); };
@@ -1614,7 +1632,7 @@
   $('switchRoleBtn').onclick = () => { closeSheet('settingsSheet'); showOnboard('reenter'); };
 
   // ---------- Review list (reviewers; admin "review hub") ----------
-  const revState = { items: [], loaded: false, loading: false, tab: 'todo', sort: 'new', cat: '', by: '', orchard: '', date: 'all' };
+  const revState = { items: [], loaded: false, loading: false, tab: 'todo', sort: 'new', cat: '', by: '', orchard: '', date: 'all', removed: [], selecting: false, sel: new Set() };
   let hubOpen = false;
   const thumbCache = new Map(), imgCache = new Map();
   const revIsAdmin = () => state.role === 'admin';
@@ -1629,14 +1647,14 @@
     revState.loading = true; $('revCount').textContent = t('loading');
     try {
       const r = await api({ action: 'queue', key: state.password, tz: tzName(), reviewer: state.role === 'reviewer' ? state.revName : '' });
-      if (r.ok) { revState.items = r.items || []; revState.loaded = true; mergeOutbox(); }
+      if (r.ok) { revState.items = r.items || []; revState.removed = r.removed || []; revState.loaded = true; mergeOutbox(); }
       else if (r.error === 'bad_key') passwordRejected();
       else toast(t('serverErr'), true);
     } catch (e) { console.error(e); toast(t('serverErr'), true); }
     revState.loading = false;
     renderQueue();
   }
-  function revTabs() { return revIsAdmin() ? ['todo', 'reviewed', 'disagree', 'all'] : ['todo', 'mine', 'all']; }
+  function revTabs() { return revIsAdmin() ? ['todo', 'reviewed', 'disagree', 'all', 'removed'] : ['todo', 'mine', 'all']; }
   function revPass(s) {
     const tab = revState.tab, n = latestPer(s.reviews).length;
     if (revIsAdmin()) {
@@ -1668,6 +1686,19 @@
     fillSelect($('revBy'), t('allPeople'), [...new Set(all.map((s) => s.by).filter(Boolean))], revState.by);
     fillSelect($('revOrchard'), t('allOrchards'), [...new Set(all.map((s) => s.orchard).filter(Boolean))], revState.orchard);
     $('revDate').innerHTML = DATES.map((d) => `<option value="${d}" ${revState.date === d ? 'selected' : ''}>${esc(t('d_' + d))}</option>`).join('');
+    $('revSelectBtn').hidden = !revIsAdmin() || revState.tab === 'removed';
+    document.querySelector('.rev-filters').hidden = revState.tab === 'removed';
+    $('revSelectBtn').classList.toggle('on', revState.selecting);
+    if (revState.tab === 'removed') revState.selecting = false;
+    $('revSelBar').hidden = !revState.selecting || $('revMain').hidden;
+    $('revSelCount').textContent = t('selectedN', { n: revState.sel.size });
+    $('revSelRemove').disabled = !revState.sel.size;
+    if (revState.tab === 'removed') {
+      renderRemovedTab(); renderRevNews();
+      $('hubBadge').hidden = !revIsAdmin() || !revState.loaded;
+      $('hubBadge').textContent = all.filter((s) => !s.reviewCount).length;
+      return;
+    }
     // Newest first, by real time (rows in the Sheet are not always in time order, e.g. re-sent photos).
     // In "reviewed" tabs the time is the latest review, so what was just reviewed is on top.
     const reviewedTab = revState.tab === 'mine' || revState.tab === 'reviewed';
@@ -1688,7 +1719,7 @@
         ? `<span class="state-tag ${s.reviewCount ? 'done' : 'todo'}">${esc(s.reviewCount ? t('reviewedN', { n: s.reviewCount }) : t('awaitReview'))}</span>${n >= 2 ? `<span class="agree-tag ${disagree(s) ? 'diff' : 'same'}">${esc(t(disagree(s) ? 'disagree' : 'agreeAll'))}</span>` : ''}`
         : me ? `<span class="state-tag done">${esc(t('myVerdict', { v: t(me.verdict === 'agree' ? 'vAgree' : 'vCorrect') }))}</span>` : `<span class="state-tag todo">${esc(t('awaitReview'))}</span>`;
       const thumb = thumbCache.get(s.id);
-      return `<button class="rv-item" data-sid="${esc(s.id)}"><div class="rv-thumb" ${thumb ? `style="background-image:url('${thumb}')"` : ''}></div>
+      return `<button class="rv-item${revState.selecting ? ' sel-mode' + (revState.sel.has(s.id) ? ' selected' : '') : ''}" data-sid="${esc(s.id)}"><div class="rv-thumb" ${thumb ? `style="background-image:url('${thumb}')"` : ''}></div>
         <div><div class="rv-title">${esc(s.orchard && s.orchard !== 'NA' ? s.orchard : s.folder)}${s.tree ? ' · ' + esc(treeLabelOf(String(s.tree).replace(/-p\d+$/, ''))) : ''}</div>
         <div class="rv-meta">${esc(s.by)} · ${esc(fmtDateTime(s.capturedAt || s.submittedAt))}</div>
         ${lblsHtml(s.labels, s.labelText, s.confident)}<div class="rv-state">${stateTags}</div></div></button>`;
@@ -1713,7 +1744,22 @@
   $('revTabs').onclick = (e) => { const b = e.target.closest('[data-tab]'); if (b) { revState.tab = b.dataset.tab; renderQueue(); } };
   [['revSort', 'sort'], ['revCat', 'cat'], ['revBy', 'by'], ['revOrchard', 'orchard'], ['revDate', 'date']].forEach(([id, k]) => { $(id).onchange = () => { revState[k] = $(id).value; renderQueue(); }; });
   $('revRefresh').onclick = () => loadQueue();
-  $('revList').onclick = (e) => { const b = e.target.closest('[data-sid]'); if (b) openRevSheet(revState.items.find((s) => s.id === b.dataset.sid)); };
+  $('revList').onclick = (e) => {
+    const rb = e.target.closest('[data-restore]');
+    if (rb) {
+      const fid = rb.dataset.restore; rb.disabled = true;
+      restorePhoto(fid, async () => {
+        revState.removed = (revState.removed || []).filter((r) => r.fileId !== fid);
+        for (const i of state.items) if (i.driveId === fid && i.removed) { delete i.removed; await putItem(i); }
+        render(); loadQueue();
+      }).finally(() => { rb.disabled = false; });
+      return;
+    }
+    const b = e.target.closest('[data-sid]');
+    if (!b) return;
+    if (revState.selecting) { const id = b.dataset.sid; if (revState.sel.has(id)) revState.sel.delete(id); else revState.sel.add(id); renderQueue(); return; }
+    openRevSheet(revState.items.find((s) => s.id === b.dataset.sid));
+  };
   $('adminHubBtn').onclick = () => { hubOpen = true; applyRole(); window.scrollTo(0, 0); revState.tab = 'todo'; loadQueue(); };
   $('revBack').onclick = () => { hubOpen = false; applyRole(); render(); window.scrollTo(0, 0); };
 
@@ -1752,6 +1798,7 @@
   }
   async function openRevSheet(s) {
     if (!s) return;
+    $('rvRemove').hidden = !revIsAdmin();
     // Fetch the next photo in the background while this one is being reviewed.
     const nx = nextInList(s.id, revState.order || []);
     if (nx && navigator.onLine) { const n = revState.items.find((x) => x.id === nx); if (n) setTimeout(() => photoUrl(n).catch(() => {}), 1500); }
@@ -1820,8 +1867,8 @@
         let res;
         try { res = await api({ ...body, action: 'review', key: state.password, tz: tzName() }); } catch (e) { console.error(e); break; } // offline / timeout: try later
         if (!res.ok && res.error === 'bad_key') { passwordRejected(); break; }
-        if (!res.ok && res.error !== 'marks_too_big' && res.error !== 'bad_review') break; // server busy: try later
-        if (!res.ok) toast(t('marksTooBig'), true);
+        if (!res.ok && res.error !== 'marks_too_big' && res.error !== 'bad_review' && res.error !== 'removed') break; // server busy: try later
+        if (!res.ok) toast(t(res.error === 'removed' ? 'photoRemoved' : 'marksTooBig'), true);
         saveOutbox(outbox().filter((x) => x.cid !== p.cid));
         if (res.ok && local) local.version = res.version || local.version;
       }
@@ -1972,22 +2019,51 @@
       case 'categories': return { ok: true, categories: store.get('demoCats', DEFAULT_CATS) };
       case 'addCategory': { const c = store.get('demoCats', DEFAULT_CATS); if (!c.some((x) => x.zh === b.zh)) c.push({ zh: b.zh, en: b.en, ms: b.ms, color: '#00acc1' }); store.set('demoCats', c); return { ok: true, categories: c }; }
       case 'submit': {
-        (b.items || []).forEach((it) => { const k = subs.findIndex((x) => x.id === it.id); const row = { ...it, submittedAt: new Date().toISOString() }; if (k >= 0) subs[k] = row; else subs.push(row); });
+        (b.items || []).forEach((it) => { const k = subs.findIndex((x) => x.id === it.id); if (k >= 0 && subs[k].status === '已移除') return; const row = { ...it, submittedAt: new Date().toISOString() }; if (k >= 0) subs[k] = row; else subs.push(row); });
         store.set('demoSubs', subs); return { ok: true };
+      }
+      case 'remove': {
+        const rm = store.get('demoRemoved', []), done = [];
+        (b.items || []).forEach((it) => {
+          if (!it.fileId || rm.some((r) => r.fileId === it.fileId)) return;
+          const sub = subs.find((x) => (it.subId && x.id === it.subId) || x.fileId === it.fileId && x.id === it.subId);
+          if (sub) { sub.status = '已移除'; sub.statusBy = b.by; sub.reason = b.reason; }
+          rm.unshift({ at: new Date().toISOString(), name: it.name, by: it.owner || (sub && sub.by) || '', folder: (sub && sub.folder) || '', reason: b.reason, removedBy: b.by, subId: sub ? sub.id : '', fileId: it.fileId });
+          done.push(it.fileId);
+        });
+        store.set('demoSubs', subs); store.set('demoRemoved', rm); return { ok: true, removed: done };
+      }
+      case 'restore': {
+        const rm = store.get('demoRemoved', []), r = rm.find((x) => x.fileId === b.fileId);
+        if (!r) return { ok: false, error: 'not_removed' };
+        const sub = subs.find((x) => x.id === r.subId); if (sub) { delete sub.status; delete sub.reason; }
+        store.set('demoSubs', subs); store.set('demoRemoved', rm.filter((x) => x !== r)); return { ok: true };
+      }
+      case 'withdraw': {
+        const sub = subs.find((x) => x.id === b.subId);
+        if (!sub) return { ok: true };
+        if ((revs[b.subId] || []).length) return { ok: false, error: 'already_reviewed' };
+        if (sub.status === '已移除') return { ok: false, error: 'removed' };
+        sub.status = '已撤回'; store.set('demoSubs', subs); return { ok: true };
       }
       case 'queue': {
         const me2 = String(b.reviewer || '').trim().toLowerCase();
-        return { ok: true, items: subs.slice().reverse().map((x) => { const all = revs[x.id] || []; const { thumb, ...rest } = x; return { ...rest, reviews: role === 'admin' ? all : all.filter((r) => r.reviewer.trim().toLowerCase() === me2), reviewCount: latestPer(all).length }; }) };
+        return { ok: true, removed: role === 'admin' ? store.get('demoRemoved', []) : undefined, items: subs.filter((x) => !x.status).slice().reverse().map((x) => { const all = revs[x.id] || []; const { thumb, ...rest } = x; return { ...rest, reviews: role === 'admin' ? all : all.filter((r) => r.reviewer.trim().toLowerCase() === me2), reviewCount: latestPer(all).length }; }) };
       }
       case 'thumbs': { const o = {}; (b.ids || []).forEach((id) => { const x = subs.find((y) => y.id === id); if (x) o[id] = x.thumb; }); return { ok: true, thumbs: o }; }
-      case 'myReviews': { const o = {}; (b.ids || []).forEach((id) => { if (revs[id]) o[id] = revs[id]; }); return { ok: true, reviews: o }; }
+      case 'myReviews': {
+        const o = {}, st = {}, rf = {}; (b.ids || []).forEach((id) => { if (revs[id]) o[id] = revs[id]; const x = subs.find((y) => y.id === id); if (x && x.status) st[id] = { status: x.status, by: x.statusBy, reason: x.reason }; });
+        store.get('demoRemoved', []).forEach((r) => { if ((b.files || []).includes(r.fileId)) rf[r.fileId] = { by: r.removedBy, reason: r.reason, at: r.at }; });
+        return { ok: true, reviews: o, status: st, removedFiles: rf };
+      }
       case 'review': {
+        if ((subs.find((x) => x.id === b.subId) || {}).status) return { ok: false, error: 'removed' };
         const list = revs[b.subId] = revs[b.subId] || [];
         const version = list.filter((r) => r.reviewer.trim().toLowerCase() === String(b.reviewer).trim().toLowerCase()).length + 1;
         list.push({ at: new Date().toISOString(), reviewer: b.reviewer, verdict: b.verdict, labels: b.labels, labelText: b.labelText, comment: b.comment, marks: b.marks, version });
         store.set('demoRevs', revs); return { ok: true, version };
       }
-      default: return { ok: true, id: 'demo' };
+      default: return { ok: true, id: 'demo-' + Math.random().toString(36).slice(2, 10) };
     }
   }
 
@@ -2102,6 +2178,127 @@
       setInterval(() => checkForUpdate(false), 30 * 60 * 1000);
     }).catch(() => {});
   }
+
+  // ---------- Removing photos (admin) / withdrawing a submission (photographer) ----------
+  // Removing moves the photo to the "_已移除" Drive folder (out of the training folders); it can be restored.
+  const RM_REASONS = ['rr_casual', 'rr_blurry', 'rr_dup', 'rr_other'];
+  let rmState = { list: [], after: null, reason: '' };
+  function openRemove(list, after) {
+    rmState = { list, after, reason: '' };
+    $('rmInfo').textContent = t('removeInfo', { n: list.length });
+    $('rmReasonText').value = '';
+    drawRmReasons();
+    $('rmConfirm').textContent = t('removeN', { n: list.length });
+    $('rmConfirm').disabled = false;
+    openSheet('removeSheet');
+  }
+  function drawRmReasons() {
+    $('rmReasons').innerHTML = RM_REASONS.map((k) => `<button type="button" class="chip ${rmState.reason === k ? 'on' : ''}" data-r="${k}">${esc(t(k))}</button>`).join('');
+  }
+  $('rmReasons').onclick = (e) => { const b = e.target.closest('[data-r]'); if (!b) return; rmState.reason = rmState.reason === b.dataset.r ? '' : b.dataset.r; drawRmReasons(); };
+  $('rmConfirm').onclick = async () => {
+    if (!navigator.onLine && !DEMO) { toast(t('needNet'), true); return; }
+    const btn = $('rmConfirm'); btn.disabled = true; btn.textContent = t('sending');
+    const reason = [rmState.reason ? t(rmState.reason) : '', $('rmReasonText').value.trim()].filter(Boolean).join(' · ');
+    try {
+      const r = await api({ action: 'remove', key: state.password, tz: tzName(), by: myName(), reason, items: rmState.list });
+      if (!r.ok) { toast(t(r.error === 'forbidden' ? 'wrongPw' : 'serverErr'), true); return; }
+      const done = new Set(r.removed || []);
+      closeSheet('removeSheet');
+      toast(t('removedN', { n: done.size }));
+      if (rmState.after) await rmState.after(done, reason);
+    } catch (e) { console.error(e); toast(t('serverErr'), true); }
+    finally { btn.disabled = false; btn.textContent = t('removeN', { n: rmState.list.length }); }
+  };
+  // Photos on this phone that the server says are removed (or restored again).
+  async function markRemoved(fileIds, reason) {
+    for (const i of state.items) if (i.driveId && fileIds.has(i.driveId)) { i.removed = { by: myName(), reason, at: new Date().toISOString() }; await putItem(i); }
+  }
+  function renderDetailAdmin(item) {
+    const box = $('detailAdmin');
+    if (state.role !== 'admin' || !item.driveId || item.status !== 'done') { box.innerHTML = ''; return; }
+    box.innerHTML = item.removed
+      ? `<button class="btn btn-outline btn-block" id="daRestore">${esc(t('restore'))}</button>`
+      : `<button class="btn btn-ghost btn-block" id="daRemove">${esc(t('removePhoto'))}</button>`;
+    if ($('daRemove')) $('daRemove').onclick = () => openRemove([{ fileId: item.driveId, subId: item.sub ? item.id : '', name: item.uploadedName || item.name, owner: item.by || state.name }], async (done, reason) => {
+      if (!done.size) { toast(t('rmNothing'), true); return; }
+      await markRemoved(done, reason); renderDetailJudge(item); renderDetailAdmin(item); render();
+    });
+    if ($('daRestore')) $('daRestore').onclick = () => restorePhoto(item.driveId, async () => { delete item.removed; await putItem(item); renderDetailJudge(item); renderDetailAdmin(item); render(); });
+  }
+  async function restorePhoto(fileId, after) {
+    try {
+      const r = await api({ action: 'restore', key: state.password, tz: tzName(), fileId, by: myName() });
+      if (!r.ok) { toast(t(r.error === 'folder_gone' ? 'restoreFolderGone' : r.error === 'file_gone' ? 'restoreFileGone' : r.error === 'not_removed' ? 'restoreNotRemoved' : 'serverErr'), true); return; }
+      toast(t('restored'));
+      if (after) await after();
+    } catch (e) { console.error(e); toast(t('serverErr'), true); }
+  }
+  // Photographer: take back a submission no expert has reviewed yet.
+  async function withdrawSub(item) {
+    if (!confirm(t('withdrawConfirm'))) return;
+    if (item.sub && !item.sub.done) { item.sub = null; await putItem(item); renderDetailJudge(item); render(); toast(t('withdrawn')); return; }
+    try {
+      const r = await api({ action: 'withdraw', key: state.password, tz: tzName(), subId: item.id, by: state.name });
+      if (!r.ok) {
+        toast(t(r.error === 'already_reviewed' ? 'withdrawReviewed' : r.error === 'removed' ? 'photoRemoved' : 'serverErr'), true);
+        if (r.error === 'already_reviewed') fetchMyReviews(true).then(() => renderDetailJudge(item));
+        return;
+      }
+      item.sub = null; await putItem(item); renderDetailJudge(item); render(); toast(t('withdrawn'));
+    } catch (e) { console.error(e); toast(t('serverErr'), true); }
+  }
+  // Home "select" bar: the admin can remove several of this phone's photos at once.
+  $('selRemove').onclick = () => {
+    const items = state.items.filter((i) => state.selected.has(i.id) && i.driveId && i.status === 'done' && !i.removed);
+    if (!items.length) { toast(t('rmNotUploaded'), true); return; }
+    openRemove(items.map((i) => ({ fileId: i.driveId, subId: i.sub ? i.id : '', name: i.uploadedName || i.name, owner: i.by || state.name })), async (done, reason) => {
+      await markRemoved(done, reason); state.selecting = false; state.selected.clear(); render();
+    });
+  };
+  // Review hub (admin): select several photos and remove them; "removed" tab with restore.
+  $('revSelectBtn').onclick = () => { revState.selecting = !revState.selecting; revState.sel = new Set(); renderQueue(); };
+  $('revSelCancel').onclick = () => { revState.selecting = false; revState.sel = new Set(); renderQueue(); };
+  $('revSelAll').onclick = () => { (revState.order || []).forEach((id) => revState.sel.add(id)); renderQueue(); };
+  $('revSelRemove').onclick = () => {
+    const list = revState.items.filter((s) => revState.sel.has(s.id));
+    if (!list.length) return;
+    openRemove(list.map((s) => ({ fileId: s.fileId, subId: s.id, name: s.name, owner: s.by })), async (done, reason) => {
+      dropFromHub(list.filter((s) => done.has(s.fileId)), reason);
+      revState.selecting = false; revState.sel = new Set(); renderQueue();
+    });
+  };
+  function dropFromHub(subs, reason) {
+    const ids = new Set(subs.map((s) => s.id));
+    revState.items = revState.items.filter((s) => !ids.has(s.id));
+    revState.removed = [...subs.map((s) => ({ at: new Date().toISOString(), name: s.name, by: s.by, folder: s.folder, reason, removedBy: myName(), subId: s.id, fileId: s.fileId })), ...(revState.removed || [])];
+    markRemoved(new Set(subs.map((s) => s.fileId)), reason).then(() => render());
+  }
+  function renderRemovedTab() {
+    const list = revState.removed || [];
+    $('revCount').textContent = t('foundN', { n: list.length });
+    $('revEmpty').hidden = list.length > 0;
+    $('revEmptyText').textContent = t('rmEmpty');
+    $('revList').innerHTML = list.map((r) => {
+      const thumb = r.subId ? thumbCache.get(r.subId) : '';
+      return `<div class="rv-item rm-item"><div class="rv-thumb" ${thumb ? `style="background-image:url('${thumb}')"` : ''}></div>
+        <div><div class="rv-title">${esc(r.folder || '')}</div>
+        <div class="rv-meta">${esc(r.by || '')}${r.reason ? ' · ' + esc(r.reason) : ''}</div>
+        <div class="rv-meta">${esc(t('removedByAt', { who: r.removedBy || '', d: fmtDateTime(r.at) }))}</div>
+        <div class="rm-actions"><button class="btn btn-small btn-outline" data-restore="${esc(r.fileId)}">${esc(t('restore'))}</button></div></div></div>`;
+    }).join('');
+    loadThumbs(list.filter((r) => r.subId && !thumbCache.has(r.subId)).map((r) => r.subId));
+  }
+  $('rvRemove').onclick = () => {
+    const s = rv.sub; if (!s) return;
+    openRemove([{ fileId: s.fileId, subId: s.id, name: s.name, owner: s.by }], async (done, reason) => {
+      if (!done.size) { toast(t('rmNothing'), true); return; }
+      const order = revState.order || [];
+      dropFromHub([s], reason); renderQueue();
+      const nextId = nextInList(s.id, order), next = nextId && revState.items.find((x) => x.id === nextId);
+      if (next) { $('revSheet').querySelector('.sheet').scrollTop = 0; openRevSheet(next); } else closeSheet('revSheet');
+    });
+  };
 
   // ---------- Notifications ----------
   // In-app notices always work. Phone push uses Firebase Cloud Messaging once the admin has set it up

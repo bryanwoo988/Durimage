@@ -757,3 +757,26 @@ body.role-reviewer .team-only { display: none !important; }
 .news-item .rv-meta b { font-weight: 700; }
 
 .push-who { font-weight: 600; color: var(--ink); }
+
+/* Removing photos (admin) / withdrawing */
+.btn-danger { background: var(--red); color: #fff; }
+.btn-danger:disabled { opacity: .5; }
+.rv-remove { color: var(--red); margin-top: 6px; }
+.detail-admin:empty { display: none; }
+.detail-admin { margin-top: 14px; }
+.detail-admin .btn { color: var(--red); }
+.rm-info { margin: 0 0 12px; color: var(--ink-2); font-size: 14px; line-height: 1.5; }
+.removed-banner { background: var(--red-100); color: var(--red); border-radius: 14px; padding: 12px 14px; font-weight: 600; font-size: 14px; }
+.removed-banner small { display: block; font-weight: 500; opacity: .85; margin-top: 2px; }
+.tile.tile-removed img { opacity: .35; filter: grayscale(1); }
+.tile-rev.removed { background: rgba(198, 40, 40, .95); }
+.rm-item { grid-template-columns: 88px 1fr; }
+.rm-item .rm-actions { margin-top: 8px; }
+.rv-item.sel-mode { position: relative; }
+.rv-item.sel-mode::after { content: ""; position: absolute; top: 10px; right: 10px; width: 24px; height: 24px; border-radius: 50%; border: 2.5px solid var(--line); background: var(--surface); }
+.rv-item.sel-mode.selected { outline: 2.5px solid var(--red); }
+.rv-item.sel-mode.selected::after { background: var(--red); border-color: var(--red); }
+#revSelectBtn.on { background: var(--red-100); color: var(--red); }
+#rmReasons { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
+#rmReasons .chip { width: auto; flex: none; padding: 8px 16px; min-height: 0; }
+.rev-filters[hidden] { display: none; }

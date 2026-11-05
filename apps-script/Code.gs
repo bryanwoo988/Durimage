@@ -31,7 +31,7 @@ function doPost(e) {
       session: ['team', 'admin'], upload: ['team', 'admin'], log: ['team', 'admin'],
       submit: ['team', 'admin'], myReviews: ['team', 'admin'],
       queue: ['reviewer', 'admin'], review: ['reviewer', 'admin'],
-      addCategory: ['admin'],
+      addCategory: ['admin'], remove: ['admin'], restore: ['admin'], withdraw: ['team', 'admin'],
     }[req.action];
     if (allowed_ && allowed_.indexOf(role) < 0) return json({ ok: false, error: 'forbidden' });
 
@@ -74,10 +74,13 @@ function doPost(e) {
             safe_(clip_(it.name, 200)), 0, String(it.fileId).replace(/[^\w-]/g, ''),
             JSON.stringify(labels), subMarks_(it.marks),
           ];
+          const st = rowOf[id] ? String(data[rowOf[id] - 1][17] || '') : '';
+          if (st === '已移除') return; // removed by the admin: a phone re-sending it changes nothing
           if (rowOf[id]) {
             const keep = sh.getRange(rowOf[id], 14).getValue(); // review count stays
             row[13] = keep;
             sh.getRange(rowOf[id], 1, 1, row.length).setValues([row]);
+            if (st === '已撤回') { sh.getRange(rowOf[id], 18, 1, 4).setValues([['', '', '', '']]); fresh.push([new Date(), 'sub', row[2], id, row[2], '']); }
           } else {
             sh.appendRow(row);
             rowOf[id] = sh.getLastRow();
@@ -93,7 +96,7 @@ function doPost(e) {
     // Reviewer / admin: list of submitted photos with reviews.
     // A reviewer only ever receives their OWN reviews (reviewers cannot see each other).
     if (req.action === 'queue') {
-      const subs = readSubs_(root, req.tz).slice(-1000).reverse(); // newest first
+      const subs = readSubs_(root, req.tz).filter(function (s) { return !s.status; }).slice(-1000).reverse(); // newest first
       const revs = readReviews_(root, req.tz);
       const me = String(req.reviewer || '').trim().toLowerCase();
       subs.forEach(function (s) {
@@ -101,7 +104,7 @@ function doPost(e) {
         s.reviews = role === 'admin' ? all : all.filter(function (r) { return r.reviewer.trim().toLowerCase() === me; });
         s.reviewCount = latestPerReviewer_(all).length;
       });
-      return json({ ok: true, items: subs });
+      return json(role === 'admin' ? { ok: true, items: subs, removed: readRemoved_(root, req.tz) } : { ok: true, items: subs });
     }
 
     // Small thumbnails for the review list, fetched in batches.
@@ -119,13 +122,20 @@ function doPost(e) {
       const want = {}; (req.ids || []).slice(0, 1500).forEach(function (id) { want[id] = 1; });
       const revs = readReviews_(root, req.tz), out = {};
       Object.keys(revs).forEach(function (id) { if (want[id]) out[id] = revs[id]; });
-      return json({ ok: true, reviews: out });
+      const status = {};
+      readSubs_(root, req.tz).forEach(function (s) { if (s.status && want[s.id]) status[s.id] = { status: s.status, by: s.statusBy, reason: s.reason }; });
+      const files = {}; (req.files || []).slice(0, 1500).forEach(function (f) { files[f] = 1; });
+      const removedFiles = {};
+      readRemoved_(root, req.tz).forEach(function (r) { if (files[r.fileId]) removedFiles[r.fileId] = { by: r.removedBy, reason: r.reason, at: r.at }; });
+      return json({ ok: true, reviews: out, status: status, removedFiles: removedFiles });
     }
 
     // Expert review (append-only: every save is kept as a new version → full audit trail).
     if (req.action === 'review') {
       const subId = clip_(req.subId, 40), reviewer = clip_(req.reviewer, 40);
       if (!subId || !reviewer) return json({ ok: false, error: 'bad_review' });
+      const gone = readSubs_(root, req.tz).filter(function (s) { return s.id === subId && s.status; })[0];
+      if (gone) return json({ ok: false, error: 'removed' });
       const marks = req.marks ? JSON.stringify(req.marks) : '';
       if (marks.length > 45000) return json({ ok: false, error: 'marks_too_big' });
       let markLink = '';
@@ -152,6 +162,70 @@ function doPost(e) {
           break;
         }
         return json({ ok: true, version: version });
+      });
+    }
+
+    // Admin: remove photos (moved to the "_已移除" Drive folder, so they leave the training folders; can be restored).
+    if (req.action === 'remove') {
+      const who = safe_(clip_(req.by, 40)), reason = safe_(clip_(req.reason, 100));
+      const items = (req.items || []).slice(0, 100);
+      return withLock_(function () {
+        const okFolders = {}; listFolders(root).forEach(function (f) { okFolders[f.id] = 1; });
+        const bin = removedFolder_(root), log = getTab_(root, req.tz, '移除', RM_HEADERS);
+        const subs = getTab_(root, req.tz, '送审', SUB_HEADERS), sv = subs.getDataRange().getValues();
+        const done = [], subIds = [];
+        items.forEach(function (it) {
+          const fid = String(it.fileId || '').replace(/[^\w-]/g, '');
+          if (!fid) return;
+          let f; try { f = DriveApp.getFileById(fid); } catch (e) { return; }
+          let from = null; const ps = f.getParents();
+          while (ps.hasNext()) { const p = ps.next(); if (okFolders[p.getId()]) from = p; }
+          if (!from) return; // not in an app folder (already removed, or not ours)
+          f.moveTo(bin);
+          let subId = clip_(it.subId, 40), row = -1;
+          for (let i = 1; i < sv.length; i++) if ((subId && sv[i][1] === subId) || String(sv[i][14]) === fid) { row = i + 1; subId = String(sv[i][1]); break; }
+          if (row > 0) { subs.getRange(row, 18, 1, 4).setValues([['已移除', who, new Date(), reason]]); subIds.push(subId); }
+          log.appendRow([new Date(), safe_(clip_(it.name || f.getName(), 200)), safe_(clip_(it.owner || (row > 0 ? sv[row - 1][2] : ''), 40)),
+            safe_(from.getName()), reason, who, subId || '', fid, from.getId(), '已移除', '', '']);
+          done.push(fid);
+        });
+        purgeQueue_(root, req.tz, subIds);
+        return json({ ok: true, removed: done });
+      });
+    }
+    if (req.action === 'restore') {
+      const fid = String(req.fileId || '').replace(/[^\w-]/g, ''), who = safe_(clip_(req.by, 40));
+      return withLock_(function () {
+        const log = getTab_(root, req.tz, '移除', RM_HEADERS), v = log.getDataRange().getValues();
+        let r = -1;
+        for (let i = v.length - 1; i >= 1; i--) if (String(v[i][7]) === fid && v[i][9] === '已移除') { r = i; break; }
+        if (r < 0) return json({ ok: false, error: 'not_removed' });
+        let dest = null;
+        try { dest = DriveApp.getFolderById(String(v[r][8])); if (dest.isTrashed()) dest = null; } catch (e) { dest = null; }
+        if (!dest) return json({ ok: false, error: 'folder_gone' });
+        try { DriveApp.getFileById(fid).moveTo(dest); } catch (e) { return json({ ok: false, error: 'file_gone' }); }
+        log.getRange(r + 1, 10, 1, 3).setValues([['已复原', new Date(), who]]);
+        if (v[r][6]) {
+          const subs = getTab_(root, req.tz, '送审', SUB_HEADERS), sv = subs.getDataRange().getValues();
+          for (let i = 1; i < sv.length; i++) if (sv[i][1] === v[r][6]) { subs.getRange(i + 1, 18, 1, 4).setValues([['', '', '', '']]); break; }
+        }
+        return json({ ok: true });
+      });
+    }
+    // Photographer: take back a submission nobody has reviewed yet (the photo stays in its Drive folder).
+    if (req.action === 'withdraw') {
+      const subId = clip_(req.subId, 40), by = clip_(req.by, 40);
+      return withLock_(function () {
+        const subs = getTab_(root, req.tz, '送审', SUB_HEADERS), sv = subs.getDataRange().getValues();
+        let row = -1;
+        for (let i = 1; i < sv.length; i++) if (sv[i][1] === subId) { row = i; break; }
+        if (row < 0) return json({ ok: true }); // never reached the server: nothing to undo
+        if (role !== 'admin' && String(sv[row][2]).trim().toLowerCase() !== by.trim().toLowerCase()) return json({ ok: false, error: 'not_yours' });
+        if (String(sv[row][17] || '') === '已移除') return json({ ok: false, error: 'removed' });
+        if ((readReviews_(root, req.tz)[subId] || []).length) return json({ ok: false, error: 'already_reviewed' });
+        subs.getRange(row + 1, 18, 1, 4).setValues([['已撤回', safe_(by), new Date(), '']]);
+        purgeQueue_(root, req.tz, [subId]);
+        return json({ ok: true });
       });
     }
 
@@ -359,7 +433,8 @@ function createBook_(root, tz) {
 }
 
 // ---------- Review data: tabs "送审", "审核", "类别" in the same Sheet ----------
-const SUB_HEADERS = ['送审时间', 'ID', '拍摄者', '文件夹', '果园', '树号', '拍摄时间', '初步判断', '手写补充', '把握', '注解', '照片', '文件名', '审核人数', 'fileId', 'labelsJSON', 'marksJSON'];
+const SUB_HEADERS = ['送审时间', 'ID', '拍摄者', '文件夹', '果园', '树号', '拍摄时间', '初步判断', '手写补充', '把握', '注解', '照片', '文件名', '审核人数', 'fileId', 'labelsJSON', 'marksJSON', '状态', '处理人', '处理时间', '原因'];
+const RM_HEADERS = ['移除时间', '文件名', '拍摄者', '原文件夹', '原因', '处理人', '送审ID', 'fileId', '原文件夹ID', '状态', '复原时间', '复原人'];
 const REV_HEADERS = ['审核时间', '送审ID', '审核员', '结论', '判断', '手写补充', '留言', '标记数', '标记图', 'marksJSON', '版本', 'labelsJSON'];
 const CAT_HEADERS = ['中文', 'English', 'Melayu', '颜色', '启用'];
 const DEFAULT_CATS = [
@@ -412,6 +487,7 @@ function readSubs_(root, tz) {
       id: String(r[1]), submittedAt: iso_(r[0]), by: String(r[2]), folder: String(r[3]), orchard: String(r[4]), tree: String(r[5]),
       capturedAt: iso_(r[6]), labels: labels, labelText: String(r[8]), confident: String(r[9]) !== '不确定', note: String(r[10]),
       name: String(r[12]), fileId: String(r[14]), marks: Array.isArray(marks) ? marks : [],
+      status: String(r[17] || ''), statusBy: String(r[18] || ''), reason: String(r[20] || ''),
     };
   });
 }
@@ -441,6 +517,27 @@ function latestPerReviewer_(list) {
   list.forEach(function (r) { const k = r.reviewer.trim().toLowerCase(); if (!m[k] || r.version >= m[k].version) m[k] = r; });
   return Object.keys(m).map(function (k) { return m[k]; });
 }
+function removedFolder_(root) {
+  const it = root.getFoldersByName('_已移除');
+  return it.hasNext() ? it.next() : root.createFolder('_已移除');
+}
+function readRemoved_(root, tz) { // photos currently removed (latest 500)
+  const book = getBook_(root, tz), sh = book.getSheetByName('移除');
+  if (!sh || sh.getLastRow() < 2) return [];
+  return sh.getDataRange().getValues().slice(1).filter(function (r) { return r[9] === '已移除'; }).slice(-500).reverse().map(function (r) {
+    return { at: iso_(r[0]), name: String(r[1]), by: String(r[2]), folder: String(r[3]), reason: String(r[4]), removedBy: String(r[5]), subId: String(r[6]), fileId: String(r[7]) };
+  });
+}
+// Removed / withdrawn photos must not be announced any more.
+function purgeQueue_(root, tz, subIds) {
+  if (!subIds.length) return;
+  const q = getBook_(root, tz).getSheetByName('_通知');
+  if (!q || q.getLastRow() < 2) return;
+  const rg = q.getRange(2, 1, q.getLastRow() - 1, NQ_HEADERS.length), v = rg.getValues();
+  let changed = false;
+  v.forEach(function (r, i) { if (subIds.indexOf(String(r[3])) >= 0) { v[i] = NQ_HEADERS.map(function () { return ''; }); changed = true; } });
+  if (changed) rg.setValues(v);
+}
 function marksFolder_(root) {
   const it = root.getFoldersByName('_审核标记');
   return it.hasNext() ? it.next() : root.createFolder('_审核标记');
@@ -449,7 +546,7 @@ function marksFolder_(root) {
 function inAppFolders_(file, root) {
   const ok = {}; listFolders(root).forEach(function (f) { ok[f.id] = 1; });
   const ps = file.getParents();
-  while (ps.hasNext()) { const p = ps.next(); if (ok[p.getId()] || p.getName() === '_审核标记') return true; }
+  while (ps.hasNext()) { const p = ps.next(); if (ok[p.getId()] || p.getName() === '_审核标记' || p.getName() === '_已移除') return true; }
   return false;
 }
 function roleOf_(key, props) {

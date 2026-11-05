@@ -205,6 +205,7 @@
       <div class="rev-head">
         <button class="icon-btn rev-back" id="revBack" hidden aria-label="Back"><svg><use href="#i-back"/></svg></button>
         <h2 id="revTitle"></h2>
+        <button class="pill-btn" id="revSelectBtn" hidden><svg><use href="#i-select"/></svg><span data-i18n="select"></span></button>
         <button class="pill-btn" id="revRefresh"><svg><use href="#i-retry"/></svg><span data-i18n="refresh"></span></button>
       </div>
       <div class="news-card" id="revNews" hidden>
@@ -224,10 +225,17 @@
       <div class="empty" id="revEmpty" hidden><div class="empty-art"><img src="icons/mark.svg" alt=""></div><div class="empty-title" id="revEmptyText"></div></div>
     </main>
 
+    <div class="select-bar" id="revSelBar" hidden>
+      <span id="revSelCount"></span>
+      <button class="btn btn-small btn-ghost" id="revSelAll" data-i18n="selectAll"></button>
+      <button class="btn btn-small btn-ghost" id="revSelCancel" data-i18n="cancel"></button>
+      <button class="btn btn-small btn-danger" id="revSelRemove"><span data-i18n="removePhoto"></span></button>
+    </div>
     <div class="select-bar" id="selectBar" hidden>
       <span id="selCount"></span>
       <button class="btn btn-small btn-ghost" id="selAll" data-i18n="selectAll"></button>
       <button class="btn btn-small btn-ghost" id="selCancel" data-i18n="cancel"></button>
+      <button class="btn btn-small btn-danger" id="selRemove" hidden><span data-i18n="removeShort"></span></button>
       <button class="btn btn-small btn-primary" id="selSubmit"><svg><use href="#i-send"/></svg><span data-i18n="sendToReview"></span></button>
     </div>
 
@@ -410,6 +418,7 @@
       <dl class="detail-list" id="detailList"></dl>
       <section class="detail-judge" id="detailJudge"></section>
       <section class="detail-reviews" id="detailReviews"></section>
+      <section class="detail-admin" id="detailAdmin"></section>
       <div class="sheet-foot detail-foot" id="detailFoot">
         <button class="btn btn-ghost" id="detailDelete" data-i18n="deleteFromPhone"></button>
         <button class="btn btn-primary" id="detailRetry" data-i18n="retry"></button>
@@ -647,11 +656,30 @@
           <button class="btn btn-ghost" data-close data-i18n="cancel"></button>
           <button class="btn btn-primary" id="rvSubmit" data-i18n="submitReview"></button>
         </div>
+        <button class="btn btn-ghost btn-block rv-remove" id="rvRemove" hidden><span data-i18n="removePhoto"></span></button>
       </div>
     </div>
   </div>
 
   <!-- Categories (admin) -->
+  <div class="sheet-backdrop" id="removeSheet" hidden>
+    <div class="sheet" role="dialog" aria-modal="true">
+      <div class="sheet-grip"></div>
+      <div class="sheet-head">
+        <h2 data-i18n="removePhoto"></h2>
+        <button class="icon-btn" data-close aria-label="Close"><svg><use href="#i-x"/></svg></button>
+      </div>
+      <p class="rm-info" id="rmInfo"></p>
+      <div class="set-sub" data-i18n="rmReason"></div>
+      <div class="chip-row" id="rmReasons"></div>
+      <input class="text-input plain" id="rmReasonText" maxlength="100" data-i18n-ph="rmReasonPh">
+      <div class="sheet-foot">
+        <button class="btn btn-ghost" data-close data-i18n="cancel"></button>
+        <button class="btn btn-danger" id="rmConfirm"></button>
+      </div>
+    </div>
+  </div>
+
   <div class="sheet-backdrop" id="notifSheet" hidden>
     <div class="sheet" role="dialog" aria-modal="true">
       <div class="sheet-grip"></div>
