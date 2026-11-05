@@ -985,6 +985,7 @@
 
   async function processQueue() {
     if (state.uploading || !navigator.onLine || !state.password) return;
+    if (state.role === 'reviewer') return; // review password cannot upload: photos wait on the phone until a team/admin login
     const todo = state.items.filter((i) => i.status === 'queued' || i.status === 'uploading')
       .sort((a, b) => a.createdAt - b.createdAt);
     if (!todo.length) { render(); flushSubmissions(); return; }

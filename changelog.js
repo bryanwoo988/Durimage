@@ -3,6 +3,15 @@
 // date = the real release time in UTC (the moment it is pushed), e.g. from `date -u +%Y-%m-%dT%H:%M:%SZ`.
 window.DURIMAGE_CHANGELOG = [
   {
+    version: '1.5.3',
+    date: '2026-11-05T06:28:40Z',
+    notes: {
+      zh: ['用审核密码登录时，手机里还没上传的照片会先暂停，换回团队或管理员密码后自动继续上传，不会变成「上传失败」'],
+      en: ['While signed in with the review password, photos not yet uploaded wait on the phone and continue automatically after switching back to the team or admin password, instead of failing'],
+      ms: ['Semasa log masuk dengan kata laluan semakan, foto yang belum dimuat naik menunggu dalam telefon dan diteruskan secara automatik selepas bertukar kembali ke kata laluan pasukan atau pentadbir, bukannya gagal'],
+    },
+  },
+  {
     version: '1.5.2',
     date: '2026-11-05T06:10:58Z',
     notes: {
