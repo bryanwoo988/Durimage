@@ -41,6 +41,11 @@
     trees: store.get('trees', {}),               // { ORCHARD: { mode: 'seq'|'tag', seq, tag, day } }
     pcount: store.get('pcount', {}),             // photos per tree per day → the -pNN number
     reviewSource: 'camera', reviewSnap: null,
+    role: store.get('role', 'team'),             // 'team' | 'reviewer' | 'admin'
+    revName: store.get('revName', ''),           // reviewer's display name (any language)
+    cats: store.get('cats', null),               // pest/disease list from the backend
+    filter: { q: '', orchard: '', tree: '', cats: [], date: 'all', flags: [], folder: '' },
+    selecting: false, selected: new Set(),
     items: [],
     pending: [],
     reviewFolder: null,
@@ -108,9 +113,8 @@
   // text/plain avoids a CORS preflight, which Apps Script cannot answer.
   async function api(body) {
     if (DEMO) {
-      await new Promise((r) => setTimeout(r, 600));
-      if (body.action === 'folders') return { ok: true, folders: DEMO_FOLDERS };
-      return { ok: true, id: 'demo' };
+      await new Promise((r) => setTimeout(r, 300));
+      return demoApi(body);
     }
     const r = await fetch(CFG.SCRIPT_URL, {
       method: 'POST',
@@ -161,10 +165,13 @@
     $('pwCancel').hidden = mode !== 'reenter';
     $('nameCancel').hidden = mode !== 'editName';
     $('nameNotice').hidden = mode !== 'nameAscii';
+    const rev = state.role === 'reviewer';
+    $('nameStep').textContent = t('step', { n: 2 }) + ' · ' + t(rev ? 'reviewerNameTitle' : 'nameTitle');
+    $('nameForm').querySelector('.ob-help').textContent = t(rev ? 'reviewerNameDesc' : 'nameDesc');
     $('pwErr').textContent = '';
     $('pwInput').value = '';
     $('pwInput').classList.remove('bad');
-    $('nameInput').value = nonAscii(state.name) ? '' : (state.name || '');
+    $('nameInput').value = state.role === 'reviewer' ? (state.revName || '') : nonAscii(state.name) ? '' : (state.name || '');
     // No auto-focus on first launch: the keyboard would cover the intro. Focus only when re-entering.
     if (mode !== 'pw') setTimeout(() => (pwStep ? $('pwInput') : $('nameInput')).focus(), 50);
   }
@@ -172,7 +179,8 @@
     $('onboard').hidden = true; state.onboardMode = null;
     document.body.classList.remove('ob-mode'); document.documentElement.classList.remove('ob-mode');
     maybeShowWhatsNew();
-    if (state.password && state.name) gpsStart(); // location permission is asked now, not when the camera opens
+    applyRole();
+    if (state.password && state.name && state.role !== 'reviewer') gpsStart(); // location permission is asked now, not when the camera opens
   }
   function setPwVisible(on) {
     $('pwInput').type = on ? 'text' : 'password';
@@ -183,6 +191,7 @@
   $('pwEye').onclick = () => { setPwVisible($('pwInput').type === 'password'); $('pwInput').focus(); };
   function needsOnboard() {
     if (!state.password) { showOnboard('pw'); return true; }
+    if (state.role === 'reviewer') { if (!state.revName) { showOnboard('revName'); return true; } return false; }
     if (!state.name) { showOnboard('name'); return true; }
     if (nonAscii(state.name)) { showOnboard('nameAscii'); return true; } // file names are English-only
     return false;
@@ -197,11 +206,16 @@
     const btn = $('pwSubmit');
     btn.disabled = true; btn.textContent = t('checking');
     try {
-      const res = await api({ action: 'folders', key: pw });
+      let res = await api({ action: 'login', key: pw });
+      let role = res.role;
+      if (!res.ok && res.error === 'bad_action') { role = 'team'; res = { ok: true }; } // backend not updated yet
       if (res.ok) {
         state.password = pw; store.set('pw', pw);
-        setFolders(res.folders);
-        if (state.name) { hideOnboard(); processQueue(); } else showOnboard('name');
+        state.role = role || 'team'; store.set('role', state.role);
+        if (state.role !== 'reviewer') { const f = await api({ action: 'folders', key: pw }); if (f.ok) setFolders(f.folders); }
+        loadCats();
+        applyRole();
+        if (!needsOnboard()) { hideOnboard(); processQueue(); }
         render();
       } else if (res.error === 'bad_key') err(t('wrongPw'));
       else err(t('serverErr'));
@@ -213,13 +227,19 @@
   });
   $('nameForm').addEventListener('submit', (e) => {
     e.preventDefault();
+    if (state.role === 'reviewer') { // reviewers: name only shown to the admin, any language is fine
+      const rn = $('nameInput').value.trim().replace(/\s+/g, ' ').slice(0, 30);
+      if (!rn) { $('nameInput').classList.remove('bad'); void $('nameInput').offsetWidth; $('nameInput').classList.add('bad'); return; }
+      state.revName = rn; store.set('revName', rn);
+      hideOnboard(); applyRole(); render(); return;
+    }
     const name = $('nameInput').value.replace(/[^A-Za-z0-9 \-]/g, '').trim().replace(/\s+/g, ' ');
     if (!name) { $('nameInput').classList.remove('bad'); void $('nameInput').offsetWidth; $('nameInput').classList.add('bad'); return; }
     state.name = name; store.set('name', name);
     hideOnboard(); render(); processQueue();
   });
   $('pwCancel').onclick = hideOnboard;
-  asciiField($('nameInput'), null, false);
+  asciiField($('nameInput'), null, false, () => state.role !== 'reviewer');
   $('nameCancel').onclick = hideOnboard;
 
   // ---------- Date helpers ----------
@@ -265,8 +285,12 @@
     $('statPending').textContent = pending.length;
     $('statDone').textContent = state.items.filter((i) => i.status === 'done').length;
 
-    const items = [...state.items].sort((a, b) => b.createdAt - a.createdAt).slice(0, 60);
-    $('emptyState').hidden = items.length > 0;
+    const filtering = filterActive();
+    const matched = [...state.items].filter((i) => passesFilter(i)).sort((a, b) => b.createdAt - a.createdAt);
+    const items = matched.slice(0, filtering ? 400 : 60);
+    state.visibleIds = items.map((i) => i.id);
+    $('emptyState').hidden = items.length > 0 || filtering;
+    renderActiveFilters(matched.length);
     let lastDay = '';
     $('recentGrid').innerHTML = items.map((i) => {
       const d = new Date(i.capturedAt || i.createdAt);
@@ -274,7 +298,11 @@
       const head = day !== lastDay ? `<div class="grid-date">${esc(day)}</div>` : '';
       lastDay = day;
       const icon = i.status === 'done' ? '<svg><use href="#i-check"/></svg>' : i.status === 'error' ? '<svg><use href="#i-retry"/></svg>' : '';
-      return `${head}<button class="tile" data-id="${esc(i.id)}">
+      const sel = state.selecting ? ` sel-mode${state.selected.has(i.id) ? ' selected' : ''}` : '';
+      const nRev = latestPer(i.reviews || []).length;
+      const revTag = !i.sub ? '' : !i.sub.done ? `<div class="tile-rev">${esc(t('subQueued'))}</div>`
+        : nRev ? `<div class="tile-rev done">${esc(t('reviewedN', { n: nRev }))}</div>` : `<div class="tile-rev">${esc(t('awaitReview'))}</div>`;
+      return `${head}<button class="tile${sel}" data-id="${esc(i.id)}">${revTag}
         <img src="${i.thumb}" alt="" loading="lazy">
         <div class="tile-folder">${esc(i.folderName)}</div>
         ${i.note ? '<div class="tile-note"><svg><use href="#i-note"/></svg></div>' : ''}
@@ -291,6 +319,8 @@
     renderFolderList();
     renderHistory();
     renderTree();
+    renderSelectBar();
+    renderRoleBits();
   }
 
   const folderChip = (f, on) => `<svg><use href="#i-folder-fill"/></svg><span class="name">${esc(f.name)}</span>
@@ -399,8 +429,9 @@
   }
 
   // Live filter for typed fields: drops anything that is not a letter, digit, space or '-'.
-  function asciiField(input, warn, upper) {
+  function asciiField(input, warn, upper, active) {
     const run = (e) => {
+      if (active && !active()) return;
       if (e && e.isComposing) return; // wait until a Chinese/IME word is finished, then strip it
       const v = input.value;
       let f = v.replace(/[_/\\.,:;|]/g, '-').replace(/[^A-Za-z0-9 \-]/g, '');
@@ -645,6 +676,8 @@
     state.reviewSnap = state.track && state.orchard ? (() => { const tr = treeOf(state.orchard); return { orchard: state.orchard, mode: tr.mode, token: treeToken(tr.mode, tr.seq, tr.tag) }; })() : null;
     if (state.reviewSource === 'camera' && state.track && !state.orchard) { state.reviewSource = 'gallery'; } // safety: never label a camera photo with no orchard
     $('oldToggle').checked = false; $('rmOrchard').value = ''; $('rmTree').value = '';
+    saveJudge.set(null);
+    $('sendToggle').checked = store.get('sendDefault', false);
     const strip = $('reviewStrip');
     strip.innerHTML = '';
     for (const f of files) {
@@ -757,6 +790,9 @@
     const files = state.pending;
     const note = $('noteInput').value.trim();
     const pos = gpsFix(); // best recent fix at the moment of saving
+    const judge = saveJudge.isEmpty() ? null : saveJudge.get();
+    const send = $('sendToggle').checked;
+    store.set('sendDefault', send);
     setCurrentFolder(folder.id);
     closeSheet('reviewSheet');
 
@@ -805,6 +841,7 @@
         mime: f.type || 'image/jpeg', size: f.size, description: describe(cap, meta, tree), note, thumb: imgs.thumb,
         capturedAt: cap.date.toISOString(), capSrc: cap.src, pos: source === 'camera' ? (pos || null) : null, by: state.name,
         meta, sha256: hash,
+        judge, sub: send ? { want: true, done: false } : null,
       };
       await putBlob(id, f); // the untouched original
       if (imgs.preview) await putBlob(id + '_p', imgs.preview); // kept after upload so the detail view still has a picture
@@ -946,7 +983,7 @@
     if (state.uploading || !navigator.onLine || !state.password) return;
     const todo = state.items.filter((i) => i.status === 'queued' || i.status === 'uploading')
       .sort((a, b) => a.createdAt - b.createdAt);
-    if (!todo.length) { render(); return; }
+    if (!todo.length) { render(); flushSubmissions(); return; }
     state.uploading = true;
     state.batch = { total: todo.length, done: 0 };
     const run = { doneByFolder: {}, rejected: false, stop: false };
@@ -975,6 +1012,7 @@
     await trimHistory();
     render();
     maybeReload();
+    flushSubmissions();
     if (run.rejected) { passwordRejected(); return; }
     const waiting = state.items.some((i) => i.status === 'queued');
     // #3 weak signal / Google busy: try again by itself after a pause, even if the phone still says "online".
@@ -986,88 +1024,143 @@
 
   async function trimHistory() {
     const done = state.items.filter((i) => i.status === 'done').sort((a, b) => b.createdAt - a.createdAt);
-    const drop = done.slice(120);
+    const drop = done.slice(1000); // keep the last 1000 uploaded photos (preview + details) for browsing
     for (const old of drop) { await delItem(old.id); await delBlob(old.id + '_p'); }
     const ids = new Set(drop.map((i) => i.id));
     state.items = state.items.filter((i) => !ids.has(i.id));
   }
 
-  // ---------- Full-screen viewer (pinch / double-tap zoom, drag to pan) ----------
-  const vw = { s: 1, x: 0, y: 0, pts: new Map(), pinch: null, pan: null, lastTap: 0, url: null };
-  function vwApply() {
-    const st = $('viewerStage'), W = st.clientWidth, H = st.clientHeight;
-    vw.s = Math.min(8, Math.max(1, vw.s));
-    // The photo is letter-boxed inside the screen; clamp against the photo itself, not the screen:
-    // bigger than the screen → no empty edge may show; smaller → keep it centred.
-    const im = $('viewerImg'), r = (im.naturalWidth || W) / (im.naturalHeight || H);
-    const cw = Math.min(W, H * r), ch = cw / r, ox = (W - cw) / 2, oy = (H - ch) / 2;
-    const fit = (pos, size, off, view) => size * vw.s <= view
-      ? (view - size * vw.s) / 2 - off * vw.s
-      : Math.min(-off * vw.s, Math.max(view - (off + size) * vw.s, pos));
-    vw.x = fit(vw.x, cw, ox, W);
-    vw.y = fit(vw.y, ch, oy, H);
-    $('viewerImg').style.transform = `translate(${vw.x}px, ${vw.y}px) scale(${vw.s})`;
+  // ---------- Pan / zoom engine (viewer, review image, drawing editor) ----------
+  // stage = visible box; layer = photo-sized element (image + marks) that is moved and scaled.
+  function makeZoomer(stage, layer, opts = {}) {
+    const z = { s: 1, x: 0, y: 0, ox: 0, oy: 0, cw: 0, ch: 0, nat: [1, 1], pts: new Map(), pinch: null, pan: null, lastTap: 0 };
+    z.fit = (nw, nh) => {
+      if (nw && nh) z.nat = [nw, nh];
+      const W = stage.clientWidth, H = stage.clientHeight, r = z.nat[0] / z.nat[1];
+      z.cw = Math.min(W, H * r); z.ch = z.cw / r; z.ox = (W - z.cw) / 2; z.oy = (H - z.ch) / 2;
+      Object.assign(layer.style, { left: z.ox + 'px', top: z.oy + 'px', width: z.cw + 'px', height: z.ch + 'px' });
+      z.apply(); if (opts.onFit) opts.onFit(z);
+    };
+    z.apply = () => {
+      const W = stage.clientWidth, H = stage.clientHeight;
+      z.s = Math.min(8, Math.max(1, z.s));
+      // photo bigger than the screen → no empty edge may show; smaller → keep it centred
+      const lim = (pos, size, off, view) => size * z.s <= view ? (view - size * z.s) / 2 - off
+        : Math.min(-off, Math.max(view - size * z.s - off, pos));
+      z.x = lim(z.x, z.cw, z.ox, W); z.y = lim(z.y, z.ch, z.oy, H);
+      layer.style.transform = `translate(${z.x}px, ${z.y}px) scale(${z.s})`;
+    };
+    z.reset = () => { z.s = 1; z.x = 0; z.y = 0; z.apply(); };
+    z.zoomAt = (px, py, ns) => { const u = (px - z.ox - z.x) / z.s, v = (py - z.oy - z.y) / z.s; z.s = Math.min(8, Math.max(1, ns)); z.x = px - z.ox - u * z.s; z.y = py - z.oy - v * z.s; z.apply(); };
+    z.rel = (e) => { const r = stage.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; };
+    // screen point → photo coordinates 0..1
+    z.toPhoto = (e) => { const p = z.rel(e); return [(p.x - z.ox - z.x) / z.s / z.cw, (p.y - z.oy - z.y) / z.s / z.ch]; };
+    const mine = (e) => !opts.claim || !opts.claim(e, z);
+    stage.addEventListener('pointerdown', (e) => {
+      if (!mine(e)) return;
+      try { stage.setPointerCapture(e.pointerId); } catch {}
+      z.pts.set(e.pointerId, z.rel(e));
+      if (z.pts.size === 2) {
+        const [a, b] = [...z.pts.values()];
+        z.pinch = { d: Math.hypot(a.x - b.x, a.y - b.y) || 1, s: z.s, m: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }, x: z.x, y: z.y };
+        z.pan = null;
+      } else if (z.pts.size === 1) { const p = z.rel(e); z.pan = { sx: p.x, sy: p.y, x: z.x, y: z.y, moved: false }; }
+    });
+    stage.addEventListener('pointermove', (e) => {
+      if (!z.pts.has(e.pointerId)) return;
+      z.pts.set(e.pointerId, z.rel(e));
+      if (z.pinch && z.pts.size >= 2) {
+        const [a, b] = [...z.pts.values()];
+        const d = Math.hypot(a.x - b.x, a.y - b.y), m = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+        const ns = Math.min(8, Math.max(1, z.pinch.s * d / z.pinch.d));
+        const u = (z.pinch.m.x - z.ox - z.pinch.x) / z.pinch.s, v = (z.pinch.m.y - z.oy - z.pinch.y) / z.pinch.s;
+        z.s = ns; z.x = m.x - z.ox - u * ns; z.y = m.y - z.oy - v * ns; z.apply();
+      } else if (z.pan) {
+        const p = z.rel(e);
+        if (Math.abs(p.x - z.pan.sx) + Math.abs(p.y - z.pan.sy) > 6) z.pan.moved = true;
+        z.x = z.pan.x + p.x - z.pan.sx; z.y = z.pan.y + p.y - z.pan.sy; z.apply();
+      }
+    });
+    const up = (e) => {
+      if (!z.pts.has(e.pointerId)) return;
+      const tap = z.pan && !z.pan.moved && z.pts.size === 1 && !z.pinch;
+      z.pts.delete(e.pointerId);
+      if (z.pts.size < 2) z.pinch = null;
+      if (z.pts.size === 1) { const p = [...z.pts.values()][0]; z.pan = { sx: p.x, sy: p.y, x: z.x, y: z.y, moved: true }; }
+      if (z.pts.size === 0) {
+        z.pan = null;
+        if (tap && !opts.noDoubleTap) {
+          const now = Date.now(), p = z.rel(e);
+          if (now - z.lastTap < 320) { z.zoomAt(p.x, p.y, z.s > 1.05 ? 1 : 3); z.lastTap = 0; } else z.lastTap = now;
+        }
+      }
+    };
+    stage.addEventListener('pointerup', up);
+    stage.addEventListener('pointercancel', up);
+    stage.addEventListener('wheel', (e) => { e.preventDefault(); const p = z.rel(e); z.zoomAt(p.x, p.y, z.s * (e.deltaY < 0 ? 1.15 : 1 / 1.15)); }, { passive: false });
+    window.addEventListener('resize', () => { if (stage.offsetParent !== null) z.fit(); });
+    return z;
   }
-  function vwZoomAt(px, py, ns) { const p = { x: (px - vw.x) / vw.s, y: (py - vw.y) / vw.s }; vw.s = ns; vw.x = px - p.x * ns; vw.y = py - p.y * ns; vwApply(); }
-  function openViewer(src, ownedUrl) {
-    vw.s = 1; vw.x = 0; vw.y = 0; vw.pts.clear(); vw.pinch = vw.pan = null;
-    if (vw.url) URL.revokeObjectURL(vw.url);
-    vw.url = ownedUrl || null;
-    $('viewerImg').src = src;
-    $('viewerImg').style.transform = '';
+
+  // ---------- Marks (circles, boxes, arrows, pen) drawn by reviewers ----------
+  // A mark: { t: 'pen'|'ellipse'|'rect'|'arrow', c: category, col: colour, w: 1|2|3, p: [[u,v],…] } with u,v in 0..1
+  const MARK_W = { 1: 0.004, 2: 0.008, 3: 0.014 }; // stroke width relative to photo width
+  function renderMarks(svg, marks, cw, ch, opts = {}) {
+    svg.setAttribute('viewBox', `0 0 ${cw} ${ch}`);
+    const sw = (m) => Math.max(1.5, (MARK_W[m.w] || MARK_W[2]) * cw);
+    const P = (q) => `${(q[0] * cw).toFixed(1)},${(q[1] * ch).toFixed(1)}`;
+    const out = [];
+    (marks || []).forEach((m, i) => {
+      if (!m.p || !m.p.length) return;
+      const col = esc(m.col || '#e53935'), w = sw(m);
+      const a = m.p[0], b = m.p[m.p.length - 1];
+      const x1 = Math.min(a[0], b[0]) * cw, y1 = Math.min(a[1], b[1]) * ch, x2 = Math.max(a[0], b[0]) * cw, y2 = Math.max(a[1], b[1]) * ch;
+      const base = `fill="none" stroke="${col}" stroke-width="${w}" stroke-linecap="round" stroke-linejoin="round"`;
+      if (m.t === 'pen') out.push(`<polyline points="${m.p.map(P).join(' ')}" ${base}/>`);
+      else if (m.t === 'ellipse') out.push(`<ellipse cx="${(x1 + x2) / 2}" cy="${(y1 + y2) / 2}" rx="${(x2 - x1) / 2}" ry="${(y2 - y1) / 2}" ${base}/>`);
+      else if (m.t === 'rect') out.push(`<rect x="${x1}" y="${y1}" width="${x2 - x1}" height="${y2 - y1}" ${base}/>`);
+      else if (m.t === 'arrow') {
+        const ax = a[0] * cw, ay = a[1] * ch, bx = b[0] * cw, by = b[1] * ch, ang = Math.atan2(by - ay, bx - ax), hl = Math.max(10, w * 4);
+        out.push(`<line x1="${ax}" y1="${ay}" x2="${bx}" y2="${by}" ${base}/><polyline points="${bx - hl * Math.cos(ang - 0.5)},${by - hl * Math.sin(ang - 0.5)} ${bx},${by} ${bx - hl * Math.cos(ang + 0.5)},${by - hl * Math.sin(ang + 0.5)}" ${base}/>`);
+      }
+      if (!opts.noLabels) { // number badge at the start of the mark (matches the list under the photo)
+        const r = Math.max(9, cw * 0.022), lx = (m.t === 'pen' || m.t === 'arrow' ? a[0] * cw : x1), ly = (m.t === 'pen' || m.t === 'arrow' ? a[1] * ch : y1);
+        out.push(`<circle cx="${lx}" cy="${ly}" r="${r}" fill="${col}" stroke="#fff" stroke-width="${r * 0.18}"/><text x="${lx}" y="${ly}" fill="#fff" font-size="${r * 1.15}" font-weight="800" text-anchor="middle" dominant-baseline="central" font-family="sans-serif">${i + 1}</text>`);
+      }
+    });
+    svg.innerHTML = out.join('');
+  }
+  // Photo + marks flattened into one JPEG (saved to Drive next to the review).
+  async function flattenMarks(src, marks, maxEdge = 2048) {
+    const img = await new Promise((res, rej) => { const im = new Image(); im.onload = () => res(im); im.onerror = rej; im.src = src; });
+    const k = Math.min(1, maxEdge / Math.max(img.naturalWidth, img.naturalHeight));
+    const cw = Math.round(img.naturalWidth * k), ch = Math.round(img.naturalHeight * k);
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('xmlns', 'http://www.w3.org/2000/svg'); svg.setAttribute('width', cw); svg.setAttribute('height', ch);
+    renderMarks(svg, marks, cw, ch);
+    const overlay = await new Promise((res, rej) => { const im = new Image(); im.onload = () => res(im); im.onerror = rej; im.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg.outerHTML); });
+    const c = document.createElement('canvas'); c.width = cw; c.height = ch;
+    const g = c.getContext('2d'); g.drawImage(img, 0, 0, cw, ch); g.drawImage(overlay, 0, 0, cw, ch);
+    return c.toDataURL('image/jpeg', 0.85).split(',')[1];
+  }
+
+  // ---------- Full-screen viewer (pinch / double-tap zoom, drag to pan) ----------
+  const vz = makeZoomer($('viewerStage'), $('viewerLayer'), { onFit: (z) => renderMarks($('viewerSvg'), vwMarks, z.cw, z.ch) });
+  let vwUrl = null, vwMarks = [];
+  function openViewer(src, ownedUrl, marks) {
+    if (vwUrl) URL.revokeObjectURL(vwUrl);
+    vwUrl = ownedUrl || null; vwMarks = marks || [];
+    const im = $('viewerImg');
     $('viewer').hidden = false;
+    vz.s = 1; vz.x = 0; vz.y = 0;
+    im.onload = () => vz.fit(im.naturalWidth, im.naturalHeight);
+    im.src = src;
+    if (im.complete && im.naturalWidth) vz.fit(im.naturalWidth, im.naturalHeight);
     $('viewerHint').classList.remove('gone');
     setTimeout(() => $('viewerHint').classList.add('gone'), 2500);
   }
-  function closeViewer() { $('viewer').hidden = true; $('viewerImg').removeAttribute('src'); if (vw.url) { URL.revokeObjectURL(vw.url); vw.url = null; } }
+  function closeViewer() { $('viewer').hidden = true; $('viewerImg').removeAttribute('src'); $('viewerSvg').innerHTML = ''; if (vwUrl) { URL.revokeObjectURL(vwUrl); vwUrl = null; } }
   $('viewerClose').onclick = closeViewer;
-  const stage = $('viewerStage');
-  const rel = (e) => { const r = stage.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; };
-  stage.addEventListener('pointerdown', (e) => {
-    try { stage.setPointerCapture(e.pointerId); } catch {} // keep tracking a finger that slides off the photo
-    vw.pts.set(e.pointerId, rel(e));
-    if (vw.pts.size === 2) {
-      const [a, b] = [...vw.pts.values()];
-      vw.pinch = { d: Math.hypot(a.x - b.x, a.y - b.y), s: vw.s, m: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }, x: vw.x, y: vw.y };
-      vw.pan = null;
-    } else if (vw.pts.size === 1) {
-      const p = rel(e);
-      vw.pan = { sx: p.x, sy: p.y, x: vw.x, y: vw.y, moved: false };
-    }
-  });
-  stage.addEventListener('pointermove', (e) => {
-    if (!vw.pts.has(e.pointerId)) return;
-    vw.pts.set(e.pointerId, rel(e));
-    if (vw.pinch && vw.pts.size >= 2) {
-      const [a, b] = [...vw.pts.values()];
-      const d = Math.hypot(a.x - b.x, a.y - b.y), m = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
-      const ns = Math.min(8, Math.max(1, vw.pinch.s * d / vw.pinch.d));
-      const p = { x: (vw.pinch.m.x - vw.pinch.x) / vw.pinch.s, y: (vw.pinch.m.y - vw.pinch.y) / vw.pinch.s };
-      vw.s = ns; vw.x = m.x - p.x * ns; vw.y = m.y - p.y * ns; vwApply();
-    } else if (vw.pan) {
-      const p = rel(e);
-      if (Math.abs(p.x - vw.pan.sx) + Math.abs(p.y - vw.pan.sy) > 6) vw.pan.moved = true;
-      vw.x = vw.pan.x + p.x - vw.pan.sx; vw.y = vw.pan.y + p.y - vw.pan.sy; vwApply();
-    }
-  });
-  const vwUp = (e) => {
-    const wasPan = vw.pan && !vw.pan.moved && vw.pts.size === 1 && !vw.pinch;
-    vw.pts.delete(e.pointerId);
-    if (vw.pts.size < 2) vw.pinch = null;
-    if (vw.pts.size === 1) { const p = [...vw.pts.values()][0]; vw.pan = { sx: p.x, sy: p.y, x: vw.x, y: vw.y, moved: true }; }
-    if (vw.pts.size === 0) {
-      vw.pan = null;
-      if (wasPan) { // a tap: double-tap toggles zoom at that point
-        const now = Date.now(), p = rel(e);
-        if (now - vw.lastTap < 320) { vwZoomAt(p.x, p.y, vw.s > 1.05 ? 1 : 3); vw.lastTap = 0; }
-        else vw.lastTap = now;
-      }
-    }
-  };
-  stage.addEventListener('pointerup', vwUp);
-  stage.addEventListener('pointercancel', vwUp);
-  stage.addEventListener('wheel', (e) => { e.preventDefault(); const p = rel(e); vwZoomAt(p.x, p.y, Math.min(8, Math.max(1, vw.s * (e.deltaY < 0 ? 1.15 : 1 / 1.15)))); }, { passive: false });
-  window.addEventListener('resize', () => { if (!$('viewer').hidden) vwApply(); });
 
   // ---------- Photo detail ----------
   let detailUrl = null, detailId = null;
@@ -1099,7 +1192,7 @@
       ['fFolder', esc(item.folderName)],
       ['fTime', esc(d.toLocaleString(LOCALE(), { dateStyle: 'medium', timeStyle: 'short' })) + (item.capSrc === 'upload' ? `<br><span class="muted">${esc(t('timeUnknown'))}</span>` : '')],
       ['fBy', esc(item.by || (item.description.match(/^Photographer: (.*)$/m) || [])[1] || '')],
-      ['fNote', item.note ? esc(item.note).replace(/\n/g, '<br>') : `<span class="muted">${esc(t('noNote'))}</span>`],
+      ['flNote', item.note ? esc(item.note).replace(/\n/g, '<br>') : `<span class="muted">${esc(t('noNote'))}</span>`],
       ['fGps', pos ? `${pos.lat.toFixed(5)}, ${pos.lng.toFixed(5)} (±${pos.acc} m)<br><a href="https://maps.google.com/?q=${pos.lat},${pos.lng}" target="_blank" rel="noopener">${esc(t('openMap'))}</a>` : `<span class="muted">${esc(t('noGps'))}</span>`],
       ['fFile', `<span class="mono">${esc(item.uploadedName || item.name)}</span>`],
     ];
@@ -1115,6 +1208,9 @@
     if (item.status === 'done') rows.push(['fQuality', esc(t(item.duplicate ? 'qDuplicate' : item.compressed ? 'qCompressed' : 'qOriginal'))]);
     $('detailList').innerHTML = rows.map(([k, v]) => `<div><dt>${esc(t(k))}</dt><dd>${v}</dd></div>`).join('');
     const canAct = item.status !== 'done' && item.status !== 'uploading';
+    renderDetailJudge(item);
+    renderDetailReviews(item);
+    if (item.sub && item.sub.done) fetchMyReviews(false).then(() => { if (detailId === item.id && !$('detailSheet').hidden) renderDetailReviews(item); });
     $('detailFoot').hidden = !canAct;
     $('detailRetry').hidden = !(item.status === 'error' || (item.status === 'queued' && navigator.onLine));
     openSheet('detailSheet');
@@ -1128,7 +1224,9 @@
   $('reviewStrip').addEventListener('click', (e) => { const im = e.target.closest('img'); if (im) openViewer(im.src); });
   $('recentGrid').addEventListener('click', (e) => {
     const tile = e.target.closest('.tile');
-    if (tile) openDetail(tile.dataset.id);
+    if (!tile) return;
+    if (state.selecting) { const id = tile.dataset.id; state.selected.has(id) ? state.selected.delete(id) : state.selected.add(id); render(); return; }
+    openDetail(tile.dataset.id);
   });
   $('detailRetry').onclick = async () => {
     const item = state.items.find((i) => i.id === detailId);
@@ -1152,6 +1250,591 @@
     for (const i of state.items) if (i.status === 'error') await requeue(i);
     render(); processQueue();
   };
+
+  // =====================================================================
+  // ---------- Categories, judgements, expert review ----------
+  // =====================================================================
+  const DEFAULT_CATS = [
+    ['烂叶病', 'Leaf blight', 'Hawar daun', '#e53935'], ['介壳虫', 'Scale insect', 'Serangga perisai', '#fb8c00'],
+    ['青蚊', 'Leafhopper', 'Bena daun', '#c0a000'], ['木虱', 'Psyllid', 'Psilid', '#1e88e5'],
+    ['红蜘蛛', 'Red spider mite', 'Hama labah-labah merah', '#d81b60'], ['粉介壳', 'Mealybug', 'Koya', '#8e24aa'],
+    ['健康', 'Healthy', 'Sihat', '#2e7d32'], ['看不出来', 'Cannot tell', 'Tidak pasti', '#757575'],
+  ].map(([zh, en, ms, color]) => ({ zh, en, ms, color }));
+  if (!state.cats || !state.cats.length) state.cats = DEFAULT_CATS;
+  const tzName = () => Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const catOf = (zh) => state.cats.find((c) => c.zh === zh);
+  const catName = (zh) => { const c = catOf(zh); if (!c) return zh; return state.lang === 'en' ? (c.en || c.zh) : state.lang === 'ms' ? (c.ms || c.en || c.zh) : c.zh; };
+  const catColor = (zh) => (catOf(zh) || {}).color || '#888888';
+  async function loadCats() {
+    if (!state.password || !navigator.onLine) return;
+    try {
+      const r = await api({ action: 'categories', key: state.password, tz: tzName() });
+      if (r.ok && r.categories && r.categories.length) { state.cats = r.categories; store.set('cats', r.categories); render(); }
+    } catch {}
+  }
+  // latest review of each reviewer (older versions are kept as history)
+  function latestPer(list) {
+    const m = new Map();
+    (list || []).forEach((r) => { const k = String(r.reviewer || '').trim().toLowerCase(); if (!m.has(k) || (r.version || 1) >= (m.get(k).version || 1)) m.set(k, r); });
+    return [...m.values()];
+  }
+  const lblsHtml = (labels, text, confident) => `<div class="lbls">${(labels || []).map((z) => `<span class="lbl"><i class="cat-dot" style="background:${esc(catColor(z))}"></i>${esc(catName(z))}</span>`).join('')}${text ? `<span class="lbl free">✎ ${esc(text)}</span>` : ''}${confident === false ? `<span class="lbl unsure">${esc(t('confUnsure'))}</span>` : ''}${!(labels || []).length && !text ? `<span class="muted">${esc(t('noJudge'))}</span>` : ''}</div>`;
+
+  // Multi-select categories + free text (+ how sure). Used when saving, editing and reviewing.
+  function judgeWidget(box, opts = {}) {
+    box.innerHTML = `<div class="set-sub">${esc(t(opts.title || 'myJudgement'))}</div><div class="cat-chips"></div>
+      <input class="text-input plain" maxlength="200" autocomplete="off" placeholder="${esc(t('judgeTextPh'))}">${opts.conf === false ? '' : '<div class="segmented seg2"></div>'}`;
+    const chips = box.querySelector('.cat-chips'), txt = box.querySelector('input'), seg = box.querySelector('.segmented');
+    let sel = new Set(), confident = true;
+    const w = {
+      onchange: null,
+      draw() {
+        const extra = [...sel].filter((z) => !catOf(z)).map((zh) => ({ zh, color: '#888888' }));
+        chips.innerHTML = [...state.cats, ...extra].map((c) => `<button type="button" data-z="${esc(c.zh)}" class="${sel.has(c.zh) ? 'on' : ''}"><i class="cat-dot" style="background:${esc(c.color)}"></i>${esc(catName(c.zh))}</button>`).join('');
+        if (seg) seg.innerHTML = [['1', 'confSure'], ['0', 'confUnsure']].map(([v, k]) => `<button type="button" data-c="${v}" class="${(confident ? '1' : '0') === v ? 'on' : ''}">${esc(t(k))}</button>`).join('');
+      },
+      get: () => ({ labels: [...sel], text: txt.value.trim(), confident }),
+      set(j) { sel = new Set((j && j.labels) || []); txt.value = (j && j.text) || ''; confident = !j || j.confident !== false; w.draw(); },
+      isEmpty: () => !sel.size && !txt.value.trim(),
+    };
+    chips.onclick = (e) => { const b = e.target.closest('[data-z]'); if (!b) return; const z = b.dataset.z; sel.has(z) ? sel.delete(z) : sel.add(z); w.draw(); if (w.onchange) w.onchange(); };
+    if (seg) seg.onclick = (e) => { const b = e.target.closest('[data-c]'); if (!b) return; confident = b.dataset.c === '1'; w.draw(); };
+    txt.oninput = () => { if (w.onchange) w.onchange(); };
+    w.draw();
+    return w;
+  }
+  const saveJudge = judgeWidget($('saveJudge'));
+  const editJudge = judgeWidget($('editJudge'));
+  const rvJudge = judgeWidget($('rvJudge'), { title: 'reviewJudge', conf: false });
+
+  // ---------- Sending photos for review ----------
+  const subPayload = (i) => ({
+    id: i.id, fileId: i.driveId, name: i.uploadedName || i.name, folder: i.folderName,
+    orchard: i.meta ? (i.meta.orchard || 'NA') : '', tree: i.meta ? i.meta.tree : '', capturedAt: i.capturedAt, by: i.by || state.name,
+    labels: (i.judge && i.judge.labels) || [], labelText: (i.judge && i.judge.text) || '', confident: !i.judge || i.judge.confident !== false,
+    note: i.note || '', thumb: i.thumb,
+  });
+  let flushing = false;
+  // Photos marked "send for review" go out as soon as they are in Drive (offline → later).
+  async function flushSubmissions() {
+    if (flushing || !navigator.onLine || !state.password || state.role === 'reviewer') return;
+    const ready = state.items.filter((i) => i.sub && i.sub.want && !i.sub.done && i.driveId && i.status === 'done');
+    if (!ready.length) return;
+    flushing = true;
+    try {
+      for (let k = 0; k < ready.length; k += 20) {
+        const chunk = ready.slice(k, k + 20);
+        const res = await api({ action: 'submit', key: state.password, tz: tzName(), items: chunk.map(subPayload) });
+        if (!res.ok) { if (res.error === 'bad_key') passwordRejected(); break; }
+        for (const i of chunk) { i.sub.done = true; i.sub.at = new Date().toISOString(); await putItem(i); }
+      }
+    } catch (e) { console.error(e); } finally { flushing = false; render(); }
+  }
+  function markForReview(items) {
+    return Promise.all(items.map((i) => { i.sub = { want: true, done: false }; return putItem(i); }));
+  }
+  let lastRevFetch = 0;
+  // Reviews of my own photos (photographer / admin).
+  async function fetchMyReviews(force) {
+    if (!navigator.onLine || !state.password || state.role === 'reviewer') return;
+    if (!force && Date.now() - lastRevFetch < 60000) return;
+    const subs = state.items.filter((i) => i.sub && i.sub.done);
+    if (!subs.length) return;
+    lastRevFetch = Date.now();
+    try {
+      const r = await api({ action: 'myReviews', key: state.password, tz: tzName(), ids: subs.map((i) => i.id) });
+      if (!r.ok) return;
+      let changed = false;
+      for (const i of subs) {
+        const rv = (r.reviews || {})[i.id] || [];
+        if (JSON.stringify(rv) !== JSON.stringify(i.reviews || [])) { i.reviews = rv; changed = true; await putItem(i); }
+      }
+      if (changed) render();
+    } catch {}
+  }
+
+  // ---------- Photo details: my judgement + reviews ----------
+  function renderDetailJudge(item) {
+    const box = $('detailJudge');
+    if (state.role === 'reviewer') { box.innerHTML = ''; return; }
+    const j = item.judge, sub = item.sub;
+    const st = !sub ? '' : !sub.done ? `<span class="state-tag todo">${esc(t('subQueued'))}</span>` : `<span class="state-tag done">${esc(t('submittedAt', { d: fmtDateTime(sub.at || item.createdAt) }))}</span>`;
+    box.innerHTML = `<div class="judge-view"><div class="jv-head"><b>${esc(t('myJudgement'))}</b>${st}</div>
+      ${lblsHtml(j && j.labels, j && j.text, j ? j.confident : undefined)}
+      <div class="jv-actions"><button class="btn btn-small btn-outline" id="djEdit">${esc(t('editJudge'))}</button>
+      ${!sub || sub.done ? `<button class="btn btn-small btn-primary" id="djSend">${esc(t(sub && sub.done ? 'resend' : 'sendToReview'))}</button>` : ''}</div></div>`;
+    $('djEdit').onclick = () => { editJudge.set(item.judge); openSheet('judgeSheet'); };
+    const sendBtn = $('djSend');
+    if (sendBtn) sendBtn.onclick = async () => { await markForReview([item]); toast(t('sentN', { n: 1 })); renderDetailJudge(item); render(); flushSubmissions(); };
+  }
+  async function saveJudgeEdit(send) {
+    const item = state.items.find((i) => i.id === detailId); if (!item) return;
+    item.judge = editJudge.isEmpty() ? null : editJudge.get();
+    if (send || (item.sub && item.sub.done)) item.sub = { want: true, done: false }; // already sent → send the update too
+    await putItem(item); closeSheet('judgeSheet');
+    renderDetailJudge(item); render(); flushSubmissions();
+    toast(t(send ? 'sentN' : 'saved', { n: 1 }));
+  }
+  $('judgeSave').onclick = () => saveJudgeEdit(false);
+  $('judgeSend').onclick = () => saveJudgeEdit(true);
+
+  function reviewCards(list, opts = {}) {
+    return latestPer(list).sort((a, b) => String(b.at).localeCompare(String(a.at))).map((r) => {
+      const older = (list || []).filter((x) => String(x.reviewer).trim().toLowerCase() === String(r.reviewer).trim().toLowerCase()).length - 1;
+      return `<div class="rev-card"><div class="rc-head"><span class="rc-name">${esc(r.reviewer)}</span><span class="verdict ${r.verdict === 'agree' ? 'agree' : 'correct'}">${esc(t(r.verdict === 'agree' ? 'vAgree' : 'vCorrect'))}</span></div>
+        <div class="rc-time">${esc(fmtDateTime(r.at))}${older > 0 ? ' · ' + esc(t('editedN', { n: older })) : ''}</div>
+        <div style="margin-top:8px">${lblsHtml(r.labels, r.labelText)}</div>
+        ${r.comment ? `<p>${esc(r.comment)}</p>` : ''}
+        ${(r.marks || []).length ? `<button class="btn btn-small btn-outline rc-marks" data-marks="${esc(r.reviewer)}" data-src="${esc(opts.srcKey || '')}">${esc(t('viewMarks', { n: r.marks.length }))}</button>` : ''}</div>`;
+    }).join('');
+  }
+  function renderDetailReviews(item) {
+    const box = $('detailReviews');
+    const list = item.reviews || [];
+    if (!item.sub || !item.sub.done) { box.innerHTML = ''; return; }
+    const n = latestPer(list).length;
+    box.innerHTML = `<div class="set-sub">${esc(t('expertReviews', { n }))}</div>${n ? reviewCards(list) : `<div class="hint">${esc(t('noReviewsYet'))}</div>`}`;
+    box.querySelectorAll('[data-marks]').forEach((b) => b.onclick = async () => {
+      const r = latestPer(list).find((x) => x.reviewer === b.dataset.marks);
+      const blob = (await getBlob(item.id + '_p')) || (await getBlob(item.id));
+      const u = blob ? URL.createObjectURL(blob) : item.thumb;
+      openViewer(u, blob ? u : null, r ? r.marks : []);
+    });
+  }
+
+  // ---------- Home: filter ----------
+  const treeKey = (i) => (i.meta && i.meta.tree ? i.meta.tree.replace(/-p\d+$/, '') : '');
+  const treeLabelOf = (k) => k === 'tNA' ? t('treeUnknown') : k.startsWith('tag') ? k.slice(3) : k.startsWith('t') ? t('treeN', { n: Number(k.slice(1)) }) : k;
+  const itemCats = (i) => { const s = new Set((i.judge && i.judge.labels) || []); latestPer(i.reviews).forEach((r) => (r.labels || []).forEach((z) => s.add(z))); return s; };
+  const FLAGS = ['flNote', 'flTrainOnly', 'flUnsure', 'flUnsent', 'flPending', 'flReviewed'];
+  const flagTest = {
+    flNote: (i) => !!i.note, flTrainOnly: (i) => !!(i.meta && i.meta.trainOnly), flUnsure: (i) => !!(i.judge && i.judge.confident === false),
+    flUnsent: (i) => !i.sub, flPending: (i) => !!i.sub && !latestPer(i.reviews).length, flReviewed: (i) => latestPer(i.reviews).length > 0,
+  };
+  const DATES = ['all', 'today', 'yesterday', 'd7', 'd30'];
+  function dateOk(i, d) {
+    if (d === 'all') return true;
+    const t0 = new Date(i.capturedAt || i.createdAt), now = new Date(), day = 86400000;
+    const start = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+    if (d === 'today') return t0 >= start;
+    if (d === 'yesterday') return t0 >= start - day && t0 < start;
+    return t0 >= start - (d === 'd7' ? 6 : 29) * day;
+  }
+  function filterActive(f = state.filter) { return !!(f.q || f.orchard || f.tree || f.cats.length || f.date !== 'all' || f.flags.length || f.folder); }
+  function passesFilter(i, f = state.filter) {
+    if (f.orchard && ((i.meta && (i.meta.orchard || 'NA')) || '') !== f.orchard) return false;
+    if (f.tree && treeKey(i) !== f.tree) return false;
+    if (f.folder && i.folderName !== f.folder) return false;
+    if (!dateOk(i, f.date)) return false;
+    if (f.cats.length) { const c = itemCats(i); if (!f.cats.some((z) => c.has(z))) return false; }
+    if (f.flags.length && !f.flags.every((k) => flagTest[k](i))) return false;
+    if (f.q) {
+      const hay = [i.note, i.judge && i.judge.text, i.meta && i.meta.orchard, i.meta && i.meta.tree, i.uploadedName || i.name, i.folderName,
+        ...(i.judge ? i.judge.labels.map(catName) : []), ...latestPer(i.reviews).map((r) => [r.labelText, r.comment, ...(r.labels || []).map(catName)].join(' '))].join(' ').toLowerCase();
+      if (!f.q.toLowerCase().split(/\s+/).filter(Boolean).every((w) => hay.includes(w))) return false;
+    }
+    return true;
+  }
+  let draft = null; // filter being edited in the sheet
+  function chipRow(el, options, isOn, onTap) {
+    el.innerHTML = options.map(([v, label, color]) => `<button type="button" data-v="${esc(v)}" class="${isOn(v) ? 'on' : ''}${color ? ' cat-chip' : ''}">${color ? `<i class="cat-dot" style="background:${esc(color)}"></i>` : ''}${esc(label)}</button>`).join('') || `<span class="muted">—</span>`;
+    el.onclick = (e) => { const b = e.target.closest('[data-v]'); if (b) { onTap(b.dataset.v); drawFilterSheet(); } };
+  }
+  const countBy = (arr) => arr.reduce((m, k) => (k ? m.set(k, (m.get(k) || 0) + 1) : m), new Map());
+  function drawFilterSheet() {
+    const items = state.items, f = draft;
+    const orch = countBy(items.map((i) => (i.meta ? (i.meta.orchard || 'NA') : '')));
+    chipRow($('fOrchards'), [...orch].sort().map(([o, n]) => [o, `${o === 'NA' ? t('orchardUnknown') : o} · ${n}`]), (v) => f.orchard === v, (v) => { f.orchard = f.orchard === v ? '' : v; f.tree = ''; });
+    const trees = f.orchard ? countBy(items.filter((i) => (i.meta && (i.meta.orchard || 'NA')) === f.orchard).map(treeKey)) : new Map();
+    $('fTreesTitle').hidden = $('fTrees').hidden = !f.orchard;
+    chipRow($('fTrees'), [...trees].sort((a, b) => a[0].localeCompare(b[0], undefined, { numeric: true })).map(([k, n]) => [k, `${treeLabelOf(k)} · ${n}`]), (v) => f.tree === v, (v) => { f.tree = f.tree === v ? '' : v; });
+    const used = new Set(); items.forEach((i) => itemCats(i).forEach((z) => used.add(z)));
+    const catList = [...state.cats.map((c) => c.zh), ...[...used].filter((z) => !catOf(z))];
+    chipRow($('fCats'), catList.map((z) => [z, catName(z), catColor(z)]), (v) => f.cats.includes(v), (v) => { f.cats = f.cats.includes(v) ? f.cats.filter((x) => x !== v) : [...f.cats, v]; });
+    chipRow($('fDates'), DATES.map((d) => [d, t('d_' + d)]), (v) => f.date === v, (v) => { f.date = v; });
+    chipRow($('fFlags'), FLAGS.map((k) => [k, t(k)]), (v) => f.flags.includes(v), (v) => { f.flags = f.flags.includes(v) ? f.flags.filter((x) => x !== v) : [...f.flags, v]; });
+    const folders = countBy(items.map((i) => i.folderName));
+    chipRow($('fFolders'), [...folders].map(([n, c]) => [n, `${n} · ${c}`]), (v) => f.folder === v, (v) => { f.folder = f.folder === v ? '' : v; });
+    $('fApply').textContent = t('showN', { n: items.filter((i) => passesFilter(i, f)).length });
+  }
+  $('filterBtn').onclick = () => { draft = JSON.parse(JSON.stringify(state.filter)); $('fSearch').value = draft.q; drawFilterSheet(); openSheet('filterSheet'); };
+  $('fSearch').oninput = () => { draft.q = $('fSearch').value.trim(); drawFilterSheet(); };
+  $('fClear').onclick = () => { draft = { q: '', orchard: '', tree: '', cats: [], date: 'all', flags: [], folder: '' }; $('fSearch').value = ''; drawFilterSheet(); };
+  $('fApply').onclick = () => { state.filter = draft; closeSheet('filterSheet'); render(); };
+  function renderActiveFilters(n) {
+    const f = state.filter, on = filterActive(), box = $('activeFilters');
+    $('filterCount').hidden = !on; $('filterBtn').classList.toggle('on', on);
+    box.hidden = !on;
+    if (!on) return;
+    const parts = [];
+    if (f.q) parts.push(['q', `“${f.q}”`]);
+    if (f.orchard) parts.push(['orchard', f.orchard === 'NA' ? t('orchardUnknown') : f.orchard]);
+    if (f.tree) parts.push(['tree', treeLabelOf(f.tree)]);
+    f.cats.forEach((z) => parts.push(['cat:' + z, catName(z)]));
+    if (f.date !== 'all') parts.push(['date', t('d_' + f.date)]);
+    f.flags.forEach((k) => parts.push(['flag:' + k, t(k)]));
+    if (f.folder) parts.push(['folder', f.folder]);
+    $('filterCount').textContent = parts.length;
+    box.innerHTML = `<span class="af-count">${esc(t('foundN', { n }))}</span>` + parts.map(([k, l]) => `<button class="af-chip" data-k="${esc(k)}">${esc(l)}<svg><use href="#i-x"/></svg></button>`).join('');
+  }
+  $('activeFilters').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-k]'); if (!b) return;
+    const k = b.dataset.k, f = state.filter;
+    if (k === 'q') f.q = ''; else if (k === 'orchard') { f.orchard = ''; f.tree = ''; } else if (k === 'tree') f.tree = '';
+    else if (k === 'date') f.date = 'all'; else if (k === 'folder') f.folder = '';
+    else if (k.startsWith('cat:')) f.cats = f.cats.filter((x) => x !== k.slice(4));
+    else if (k.startsWith('flag:')) f.flags = f.flags.filter((x) => x !== k.slice(5));
+    render();
+  });
+
+  // ---------- Home: select several photos → send for review ----------
+  function renderSelectBar() {
+    $('selectBar').hidden = !state.selecting;
+    $('selectBtn').classList.toggle('on', state.selecting);
+    $('selCount').textContent = t('selectedN', { n: state.selected.size });
+    $('selSubmit').disabled = !state.selected.size;
+  }
+  $('selectBtn').onclick = () => { state.selecting = !state.selecting; state.selected.clear(); render(); };
+  $('selCancel').onclick = () => { state.selecting = false; state.selected.clear(); render(); };
+  $('selAll').onclick = () => { (state.visibleIds || []).forEach((id) => state.selected.add(id)); render(); };
+  $('selSubmit').onclick = async () => {
+    const items = state.items.filter((i) => state.selected.has(i.id));
+    if (!items.length) return;
+    const noJudge = items.filter((i) => !i.judge).length;
+    if (noJudge && !confirm(t('noJudgeConfirm', { n: noJudge }))) return;
+    await markForReview(items);
+    state.selecting = false; state.selected.clear();
+    render(); toast(t('sentN', { n: items.length }));
+    flushSubmissions();
+  };
+
+  // ---------- Roles ----------
+  function applyRole() {
+    const r = state.role, rev = r === 'reviewer';
+    document.body.classList.toggle('role-reviewer', rev);
+    document.body.classList.toggle('role-admin', r === 'admin');
+    $$('#app > main.content:not(.rev-main), #app > nav.dock').forEach((el) => { el.hidden = rev || hubOpen; });
+    $('revMain').hidden = !(rev || hubOpen);
+    $('revBack').hidden = !hubOpen;
+    if (rev && !revState.loaded && !state.onboardMode && state.revName) loadQueue();
+    renderRoleBits();
+  }
+  function renderRoleBits() {
+    const r = state.role;
+    $('brandTag').textContent = r === 'reviewer' ? `${t('reviewerRole')} · ${state.revName || ''}` : r === 'admin' ? `${t('adminRole')} · ${state.name || ''}` : t('tagline');
+    $('adminHubBtn').hidden = r !== 'admin';
+    $('catRowBtn').hidden = r !== 'admin';
+    $('catValue').textContent = t('catCount', { n: state.cats.length });
+    $('roleValue').textContent = t(r === 'reviewer' ? 'reviewerRole' : r === 'admin' ? 'adminRole' : 'teamRole');
+    $('nameValue').textContent = (r === 'reviewer' ? state.revName : state.name) || '—';
+    $('saveJudge').hidden = $('sendRow').hidden = r === 'reviewer';
+  }
+  const $$ = (q) => [...document.querySelectorAll(q)];
+  $('switchRoleBtn').onclick = () => { closeSheet('settingsSheet'); showOnboard('reenter'); };
+
+  // ---------- Review list (reviewers; admin "review hub") ----------
+  const revState = { items: [], loaded: false, loading: false, tab: 'todo', sort: 'new', cat: '', by: '', orchard: '', date: 'all' };
+  let hubOpen = false;
+  const thumbCache = new Map(), imgCache = new Map();
+  const revIsAdmin = () => state.role === 'admin';
+  const myName = () => (state.role === 'reviewer' ? state.revName : state.name) || '';
+  const mine = (s) => (s.reviews || []).filter((r) => String(r.reviewer).trim().toLowerCase() === myName().trim().toLowerCase());
+  const labelsKey = (r) => [...(r.labels || [])].sort().join('|') + '|' + String(r.labelText || '').trim().toLowerCase();
+  const disagree = (s) => { const l = latestPer(s.reviews); return l.length >= 2 && new Set(l.map(labelsKey)).size > 1; };
+  async function loadQueue() {
+    if (revState.loading) return;
+    if (!navigator.onLine) { $('revOffline').hidden = false; renderQueue(); return; }
+    $('revOffline').hidden = true;
+    revState.loading = true; $('revCount').textContent = t('loading');
+    try {
+      const r = await api({ action: 'queue', key: state.password, tz: tzName(), reviewer: state.role === 'reviewer' ? state.revName : '' });
+      if (r.ok) { revState.items = r.items || []; revState.loaded = true; }
+      else if (r.error === 'bad_key') passwordRejected();
+      else toast(t('serverErr'), true);
+    } catch (e) { console.error(e); toast(t('serverErr'), true); }
+    revState.loading = false;
+    renderQueue();
+  }
+  function revTabs() { return revIsAdmin() ? ['todo', 'reviewed', 'disagree', 'all'] : ['todo', 'mine', 'all']; }
+  function revPass(s) {
+    const tab = revState.tab, n = latestPer(s.reviews).length;
+    if (revIsAdmin()) {
+      if (tab === 'todo' && s.reviewCount > 0) return false;
+      if (tab === 'reviewed' && !(s.reviewCount > 0)) return false;
+      if (tab === 'disagree' && !disagree(s)) return false;
+    } else {
+      if (tab === 'todo' && mine(s).length) return false;
+      if (tab === 'mine' && !mine(s).length) return false;
+    }
+    if (revState.cat && !(s.labels || []).includes(revState.cat)) return false;
+    if (revState.by && s.by !== revState.by) return false;
+    if (revState.orchard && (s.orchard || '') !== revState.orchard) return false;
+    if (!dateOk({ capturedAt: s.submittedAt }, revState.date)) return false;
+    return n >= 0;
+  }
+  function fillSelect(el, allLabel, values, cur, label = (v) => v) {
+    el.innerHTML = `<option value="">${esc(allLabel)}</option>` + values.map((v) => `<option value="${esc(v)}" ${v === cur ? 'selected' : ''}>${esc(label(v))}</option>`).join('');
+  }
+  function renderQueue() {
+    const tabs = revTabs();
+    $('revTitle').textContent = t(revIsAdmin() ? 'reviewHub' : 'reviewList');
+    $('revTabs').style.setProperty('--n', tabs.length);
+    $('revTabs').innerHTML = tabs.map((k) => `<button type="button" data-tab="${k}" class="${revState.tab === k ? 'on' : ''}">${esc(t('tab_' + k))}</button>`).join('');
+    const all = revState.items;
+    $('revSort').innerHTML = ['new', 'old', 'unsure'].map((k) => `<option value="${k}" ${revState.sort === k ? 'selected' : ''}>${esc(t('sort_' + k))}</option>`).join('');
+    const cats = [...new Set(all.flatMap((s) => s.labels || []))];
+    fillSelect($('revCat'), t('allCats'), cats, revState.cat, catName);
+    fillSelect($('revBy'), t('allPeople'), [...new Set(all.map((s) => s.by).filter(Boolean))], revState.by);
+    fillSelect($('revOrchard'), t('allOrchards'), [...new Set(all.map((s) => s.orchard).filter(Boolean))], revState.orchard);
+    $('revDate').innerHTML = DATES.map((d) => `<option value="${d}" ${revState.date === d ? 'selected' : ''}>${esc(t('d_' + d))}</option>`).join('');
+    let list = all.filter(revPass);
+    if (revState.sort === 'old') list = list.slice().reverse();
+    if (revState.sort === 'unsure') list = list.slice().sort((a, b) => (a.confident === b.confident ? 0 : a.confident ? 1 : -1));
+    $('revCount').textContent = revState.loading ? t('loading') : t('foundN', { n: list.length });
+    $('revEmpty').hidden = list.length > 0 || revState.loading;
+    $('revEmptyText').textContent = t(revState.loaded ? 'revEmpty' : 'revNotLoaded');
+    $('revList').innerHTML = list.slice(0, 300).map((s) => {
+      const me = latestPer(mine(s))[0], n = latestPer(s.reviews).length;
+      const stateTags = revIsAdmin()
+        ? `<span class="state-tag ${s.reviewCount ? 'done' : 'todo'}">${esc(s.reviewCount ? t('reviewedN', { n: s.reviewCount }) : t('awaitReview'))}</span>${n >= 2 ? `<span class="agree-tag ${disagree(s) ? 'diff' : 'same'}">${esc(t(disagree(s) ? 'disagree' : 'agreeAll'))}</span>` : ''}`
+        : me ? `<span class="state-tag done">${esc(t('myVerdict', { v: t(me.verdict === 'agree' ? 'vAgree' : 'vCorrect') }))}</span>` : `<span class="state-tag todo">${esc(t('awaitReview'))}</span>`;
+      const thumb = thumbCache.get(s.id);
+      return `<button class="rv-item" data-sid="${esc(s.id)}"><div class="rv-thumb" ${thumb ? `style="background-image:url('${thumb}')"` : ''}></div>
+        <div><div class="rv-title">${esc(s.orchard && s.orchard !== 'NA' ? s.orchard : s.folder)}${s.tree ? ' · ' + esc(treeLabelOf(String(s.tree).replace(/-p\d+$/, ''))) : ''}</div>
+        <div class="rv-meta">${esc(s.by)} · ${esc(fmtDateTime(s.capturedAt || s.submittedAt))}</div>
+        ${lblsHtml(s.labels, s.labelText, s.confident)}<div class="rv-state">${stateTags}</div></div></button>`;
+    }).join('');
+    loadThumbs(list.slice(0, 300).filter((s) => !thumbCache.has(s.id)).map((s) => s.id));
+    $('hubBadge').hidden = !revIsAdmin() || !revState.loaded;
+    $('hubBadge').textContent = all.filter((s) => !s.reviewCount).length;
+  }
+  let thumbBusy = false;
+  async function loadThumbs(ids) {
+    if (thumbBusy || !ids.length || !navigator.onLine) return;
+    thumbBusy = true;
+    try {
+      for (let k = 0; k < ids.length; k += 30) {
+        const r = await api({ action: 'thumbs', key: state.password, tz: tzName(), ids: ids.slice(k, k + 30) });
+        if (!r.ok) break;
+        Object.entries(r.thumbs || {}).forEach(([id, th]) => { if (th) thumbCache.set(id, th); const el = document.querySelector(`.rv-item[data-sid="${CSS.escape(id)}"] .rv-thumb`); if (el && th) el.style.backgroundImage = `url('${th}')`; });
+      }
+    } catch {} finally { thumbBusy = false; }
+  }
+  $('revTabs').onclick = (e) => { const b = e.target.closest('[data-tab]'); if (b) { revState.tab = b.dataset.tab; renderQueue(); } };
+  [['revSort', 'sort'], ['revCat', 'cat'], ['revBy', 'by'], ['revOrchard', 'orchard'], ['revDate', 'date']].forEach(([id, k]) => { $(id).onchange = () => { revState[k] = $(id).value; renderQueue(); }; });
+  $('revRefresh').onclick = () => loadQueue();
+  $('revList').onclick = (e) => { const b = e.target.closest('[data-sid]'); if (b) openRevSheet(revState.items.find((s) => s.id === b.dataset.sid)); };
+  $('adminHubBtn').onclick = () => { hubOpen = true; applyRole(); window.scrollTo(0, 0); revState.tab = 'todo'; loadQueue(); };
+  $('revBack').onclick = () => { hubOpen = false; applyRole(); render(); window.scrollTo(0, 0); };
+
+  // ---------- Reviewing one photo ----------
+  let rv = { sub: null, src: null, marks: [], verdict: null };
+  async function photoUrl(s) {
+    if (imgCache.has(s.fileId)) return imgCache.get(s.fileId);
+    const local = state.items.find((i) => i.id === s.id); // admin's own photo: already on this phone
+    let blob = local ? ((await getBlob(local.id)) || (await getBlob(local.id + '_p'))) : null;
+    if (!blob && !DEMO) {
+      const r = await api({ action: 'image', key: state.password, tz: tzName(), fileId: s.fileId, size: 2048 });
+      if (r.ok && r.data) { const bin = atob(r.data); const u8 = new Uint8Array(bin.length); for (let k = 0; k < bin.length; k++) u8[k] = bin.charCodeAt(k); blob = new Blob([u8], { type: r.mime || 'image/jpeg' }); }
+    }
+    const url = blob ? URL.createObjectURL(blob) : (thumbCache.get(s.id) || '');
+    if (blob) { imgCache.set(s.fileId, url); if (imgCache.size > 25) { const [k, u] = imgCache.entries().next().value; URL.revokeObjectURL(u); imgCache.delete(k); } }
+    return url;
+  }
+  function drawRvMarks() {
+    const im = $('rvImg');
+    if (!im.naturalWidth) return;
+    const svg = $('rvSvg');
+    Object.assign(svg.style, { left: im.offsetLeft + 'px', top: im.offsetTop + 'px', width: im.offsetWidth + 'px', height: im.offsetHeight + 'px', inset: 'auto' });
+    renderMarks(svg, rv.marks, im.offsetWidth, im.offsetHeight);
+    $('rvDrawText').textContent = rv.marks.length ? t('editMarks', { n: rv.marks.length }) : t('drawMarks');
+  }
+  function setVerdict(v) {
+    rv.verdict = v;
+    $('rvVerdict').innerHTML = [['agree', 'vAgree'], ['correct', 'vCorrect']].map(([k, l]) => `<button type="button" data-v="${k}" class="${v === k ? 'on' : ''}">${esc(t(l))}</button>`).join('');
+  }
+  async function openRevSheet(s) {
+    if (!s) return;
+    rv = { sub: s, src: null, marks: [], verdict: null };
+    const im = $('rvImg'); im.removeAttribute('src'); $('rvSvg').innerHTML = '';
+    $('rvLoading').textContent = t('loadingPhoto'); $('rvLoading').hidden = false;
+    const tree = s.tree ? treeLabelOf(String(s.tree).replace(/-p\d+$/, '')) + ` (${s.tree})` : '';
+    $('rvInfo').innerHTML = [['fBy', s.by], ['fOrchard', s.orchard], ['fTree', tree], ['fTime', fmtDateTime(s.capturedAt || s.submittedAt)], ['fFolder', s.folder], ['flNote', s.note], ['fFile', s.name]]
+      .filter(([, v]) => v).map(([k, v]) => `<div><dt>${esc(t(k))}</dt><dd>${esc(v)}</dd></div>`).join('');
+    $('rvSubmitter').innerHTML = `<div class="judge-view"><div class="jv-head"><b>${esc(t('submitterJudge', { n: s.by }))}</b></div>${lblsHtml(s.labels, s.labelText, s.confident)}</div>`;
+    // admin sees every expert; a reviewer never sees the others
+    $('rvOthers').innerHTML = revIsAdmin() && (s.reviews || []).length ? `<div class="set-sub">${esc(t('expertReviews', { n: latestPer(s.reviews).length }))}</div>${reviewCards(s.reviews)}` : '';
+    $('rvOthers').querySelectorAll('[data-marks]').forEach((b) => b.onclick = async () => { const r = latestPer(s.reviews).find((x) => x.reviewer === b.dataset.marks); openViewer(await photoUrl(s), null, r ? r.marks : []); });
+    const prev = latestPer(mine(s))[0];
+    $('rvPrev').hidden = !prev;
+    if (prev) $('rvPrev').textContent = t('yourPrev', { v: prev.version || 1, d: fmtDateTime(prev.at) });
+    setVerdict(prev ? prev.verdict : null);
+    rvJudge.set(prev ? { labels: prev.labels, text: prev.labelText } : { labels: s.labels, text: s.labelText });
+    $('rvComment').value = prev ? prev.comment : '';
+    rv.marks = prev && prev.marks ? JSON.parse(JSON.stringify(prev.marks)) : [];
+    openSheet('revSheet');
+    rv.src = await photoUrl(s);
+    if (rv.sub !== s) return;
+    $('rvLoading').hidden = !!rv.src;
+    if (!rv.src) $('rvLoading').textContent = t('photoFailed');
+    im.onload = drawRvMarks;
+    if (rv.src) im.src = rv.src;
+  }
+  $('rvVerdict').onclick = (e) => {
+    const b = e.target.closest('[data-v]'); if (!b) return;
+    setVerdict(b.dataset.v);
+    if (b.dataset.v === 'agree') rvJudge.set({ labels: rv.sub.labels, text: rv.sub.labelText }); // agree = same as the photographer
+  };
+  rvJudge.onchange = () => { // changing the categories means it is a correction
+    const j = rvJudge.get(), s = rv.sub;
+    const same = [...j.labels].sort().join('|') === [...(s.labels || [])].sort().join('|') && j.text === (s.labelText || '');
+    setVerdict(same ? 'agree' : 'correct');
+  };
+  $('rvImgBox').onclick = () => { if (rv.src) openViewer(rv.src, null, rv.marks); };
+  $('rvDraw').onclick = () => { if (rv.src) openEditor(rv.src, rv.marks, (m) => { rv.marks = m; drawRvMarks(); }, rvJudge.get().labels); };
+  $('rvSubmit').onclick = async () => {
+    if (!rv.verdict) { toast(t('pickVerdict'), true); return; }
+    if (!navigator.onLine) { toast(t('revNeedNet'), true); return; }
+    const j = rvJudge.get(), s = rv.sub, btn = $('rvSubmit');
+    btn.disabled = true; btn.textContent = t('sending');
+    try {
+      const marks = rv.marks.map((m) => ({ ...m, p: m.p.map((q) => [Math.round(q[0] * 10000) / 10000, Math.round(q[1] * 10000) / 10000]) }));
+      let markPng = '';
+      if (marks.length && rv.src) { try { markPng = await flattenMarks(rv.src, marks); } catch {} }
+      const res = await api({ action: 'review', key: state.password, tz: tzName(), subId: s.id, reviewer: myName(), verdict: rv.verdict,
+        labels: j.labels, labelText: j.text, comment: $('rvComment').value.trim(), marks, markPng, photoName: s.name });
+      if (!res.ok) { toast(t(res.error === 'marks_too_big' ? 'marksTooBig' : 'serverErr'), true); return; }
+      (s.reviews = s.reviews || []).push({ at: new Date().toISOString(), reviewer: myName(), verdict: rv.verdict, labels: j.labels, labelText: j.text, comment: $('rvComment').value.trim(), marks, version: res.version || 1 });
+      s.reviewCount = latestPer(s.reviews).length;
+      closeSheet('revSheet'); renderQueue(); toast(t('reviewSaved'));
+    } catch (e) { console.error(e); toast(t('serverErr'), true); }
+    finally { btn.disabled = false; btn.textContent = t('submitReview'); }
+  };
+
+  // ---------- Drawing editor ----------
+  const me = { marks: [], hist: [], fut: [], tool: 'ellipse', w: 2, cat: '', col: '#e53935', mode: 'draw', cur: null, hidden: false, cb: null, start: '' };
+  const mez = makeZoomer($('meStage'), $('meLayer'), { noDoubleTap: true, claim: () => me.mode === 'draw', onFit: () => meRender() });
+  function meRender() {
+    renderMarks($('meSvg'), me.hidden ? [] : [...me.marks, me.cur].filter(Boolean), mez.cw, mez.ch);
+    $('meList').innerHTML = me.marks.length ? me.marks.map((m, i) => `<span><b style="background:${esc(m.col)}">${i + 1}</b>${esc(m.c ? catName(m.c) : t('markOther'))}<button type="button" data-del="${i}">✕</button></span>`).join('') : `<span class="me-empty">${esc(t('meHint'))}</span>`;
+    $('meUndo').disabled = !me.hist.length; $('meRedo').disabled = !me.fut.length;
+    $$('#meTools [data-t]').forEach((b) => b.classList.toggle('on', b.dataset.t === me.tool));
+    $$('#meWidths [data-w]').forEach((b) => b.classList.toggle('on', Number(b.dataset.w) === me.w));
+    $$('#meMode [data-m]').forEach((b) => b.classList.toggle('on', b.dataset.m === me.mode));
+    $('meToggle').classList.toggle('on', me.hidden);
+    $('meColorDot').style.background = me.col; $('meColor').value = me.col;
+    $('meCats').innerHTML = [...state.cats.filter((c) => c.zh !== '健康'), { zh: '', color: me.cat ? '#888888' : me.col }].map((c) => `<button type="button" data-cat="${esc(c.zh)}" class="${me.cat === c.zh ? 'on' : ''}"><i class="cat-dot" style="background:${esc(c.zh ? c.color : me.col)}"></i>${esc(c.zh ? catName(c.zh) : t('markOther'))}</button>`).join('');
+  }
+  function openEditor(src, marks, cb, preferCats) {
+    me.marks = JSON.parse(JSON.stringify(marks || [])); me.hist = []; me.fut = []; me.cb = cb; me.cur = null; me.hidden = false; me.mode = 'draw';
+    me.start = JSON.stringify(me.marks);
+    const first = (preferCats || []).find((z) => catOf(z) && z !== '健康');
+    me.cat = first || (state.cats[0] || {}).zh || ''; me.col = me.cat ? catColor(me.cat) : '#e53935';
+    $('markEd').hidden = false;
+    const im = $('meImg');
+    mez.s = 1; mez.x = 0; mez.y = 0;
+    im.onload = () => mez.fit(im.naturalWidth, im.naturalHeight);
+    im.src = src;
+    if (im.complete && im.naturalWidth) mez.fit(im.naturalWidth, im.naturalHeight);
+    meRender();
+  }
+  const closeEditor = () => { $('markEd').hidden = true; $('meImg').removeAttribute('src'); };
+  const snapshot = () => { me.hist.push(JSON.stringify(me.marks)); me.fut = []; if (me.hist.length > 60) me.hist.shift(); };
+  const clamp01 = (q) => [Math.min(1, Math.max(0, q[0])), Math.min(1, Math.max(0, q[1]))];
+  const stageEl = $('meStage');
+  stageEl.addEventListener('pointerdown', (e) => {
+    if (me.mode !== 'draw' || me.cur) return;
+    try { stageEl.setPointerCapture(e.pointerId); } catch {}
+    me.pid = e.pointerId;
+    me.cur = { t: me.tool, c: me.cat, col: me.col, w: me.w, p: [clamp01(mez.toPhoto(e))] };
+    meRender();
+  });
+  stageEl.addEventListener('pointermove', (e) => {
+    if (!me.cur || e.pointerId !== me.pid) return;
+    const q = clamp01(mez.toPhoto(e));
+    if (me.cur.t === 'pen') { const l = me.cur.p[me.cur.p.length - 1]; if (Math.hypot(q[0] - l[0], q[1] - l[1]) > 0.003) me.cur.p.push(q); }
+    else me.cur.p = [me.cur.p[0], q];
+    meRender();
+  });
+  const meUp = (e) => {
+    if (!me.cur || e.pointerId !== me.pid) return;
+    const m = me.cur; me.cur = null;
+    const a = m.p[0], b = m.p[m.p.length - 1], size = Math.hypot(b[0] - a[0], b[1] - a[1]);
+    if ((m.t === 'pen' && m.p.length >= 2) || (m.t !== 'pen' && size > 0.015)) {
+      if (m.t === 'pen' && m.p.length > 300) { const k = Math.ceil(m.p.length / 300); m.p = m.p.filter((_, i) => i % k === 0 || i === m.p.length - 1); }
+      snapshot(); me.marks.push(m);
+    }
+    meRender();
+  };
+  stageEl.addEventListener('pointerup', meUp);
+  stageEl.addEventListener('pointercancel', meUp);
+  $('meMode').onclick = (e) => { const b = e.target.closest('[data-m]'); if (b) { me.mode = b.dataset.m; meRender(); } };
+  $('meTools').onclick = (e) => { const b = e.target.closest('[data-t]'); if (b) { me.tool = b.dataset.t; me.mode = 'draw'; meRender(); } };
+  $('meWidths').onclick = (e) => { const b = e.target.closest('[data-w]'); if (b) { me.w = Number(b.dataset.w); meRender(); } };
+  $('meCats').onclick = (e) => { const b = e.target.closest('[data-cat]'); if (!b) return; me.cat = b.dataset.cat; if (me.cat) me.col = catColor(me.cat); me.mode = 'draw'; meRender(); };
+  $('meColor').oninput = () => { me.col = $('meColor').value; meRender(); };
+  $('meUndo').onclick = () => { if (!me.hist.length) return; me.fut.push(JSON.stringify(me.marks)); me.marks = JSON.parse(me.hist.pop()); meRender(); };
+  $('meRedo').onclick = () => { if (!me.fut.length) return; me.hist.push(JSON.stringify(me.marks)); me.marks = JSON.parse(me.fut.pop()); meRender(); };
+  $('meClear').onclick = () => { if (me.marks.length && confirm(t('clearMarksQ'))) { snapshot(); me.marks = []; meRender(); } };
+  $('meToggle').onclick = () => { me.hidden = !me.hidden; meRender(); };
+  $('meList').onclick = (e) => { const b = e.target.closest('[data-del]'); if (b) { snapshot(); me.marks.splice(Number(b.dataset.del), 1); meRender(); } };
+  $('meDone').onclick = () => { const cb = me.cb; const m = me.marks; closeEditor(); if (cb) cb(m); };
+  $('meCancel').onclick = () => { if (JSON.stringify(me.marks) !== me.start && !confirm(t('discardMarksQ'))) return; closeEditor(); };
+
+  // ---------- Categories (admin) ----------
+  function suggestions() {
+    const known = new Set(state.cats.map((c) => c.zh.toLowerCase()));
+    const words = new Map();
+    const add = (txt) => String(txt || '').split(/[,，、;；/]+/).map((w) => w.trim()).filter((w) => w && w.length <= 20 && !known.has(w.toLowerCase())).forEach((w) => words.set(w, (words.get(w) || 0) + 1));
+    revState.items.forEach((s) => { add(s.labelText); (s.reviews || []).forEach((r) => add(r.labelText)); });
+    state.items.forEach((i) => { if (i.judge) add(i.judge.text); });
+    return [...words].sort((a, b) => b[1] - a[1]).slice(0, 30);
+  }
+  function drawCats() {
+    $('catList').innerHTML = state.cats.map((c) => `<button type="button" class="cat-chip"><i class="cat-dot" style="background:${esc(c.color)}"></i>${esc(c.zh)}${c.en ? ' · ' + esc(c.en) : ''}${c.ms ? ' · ' + esc(c.ms) : ''}</button>`).join('');
+    const sg = suggestions();
+    $('catSuggestTitle').hidden = !sg.length;
+    $('catSuggest').innerHTML = sg.map(([w, n]) => `<button type="button" data-w="${esc(w)}">＋ ${esc(w)} · ${n}</button>`).join('');
+  }
+  $('catRowBtn').onclick = () => { closeSheet('settingsSheet'); drawCats(); openSheet('catSheet'); if (!revState.loaded) loadQueue().then(drawCats); };
+  $('catSuggest').onclick = (e) => { const b = e.target.closest('[data-w]'); if (b) { $('catZh').value = b.dataset.w; $('catZh').focus(); } };
+  $('catAddBtn').onclick = async () => {
+    const zh = $('catZh').value.trim(); if (!zh) return;
+    if (!navigator.onLine) { toast(t('revNeedNet'), true); return; }
+    const r = await api({ action: 'addCategory', key: state.password, tz: tzName(), zh, en: $('catEn').value.trim(), ms: $('catMs').value.trim() });
+    if (r.ok) { state.cats = r.categories; store.set('cats', r.categories); $('catZh').value = $('catEn').value = $('catMs').value = ''; drawCats(); render(); toast(t('catAdded', { n: zh })); }
+    else toast(t('serverErr'), true);
+  };
+
+  // ---------- Demo mode: a pretend backend kept in this browser ----------
+  function demoApi(b) {
+    const key = String(b.key || '');
+    const role = key === 'admin' ? 'admin' : key === 'review' ? 'reviewer' : 'team';
+    const subs = store.get('demoSubs', []), revs = store.get('demoRevs', {});
+    switch (b.action) {
+      case 'login': return { ok: true, role };
+      case 'folders': return { ok: true, folders: DEMO_FOLDERS };
+      case 'categories': return { ok: true, categories: store.get('demoCats', DEFAULT_CATS) };
+      case 'addCategory': { const c = store.get('demoCats', DEFAULT_CATS); if (!c.some((x) => x.zh === b.zh)) c.push({ zh: b.zh, en: b.en, ms: b.ms, color: '#00acc1' }); store.set('demoCats', c); return { ok: true, categories: c }; }
+      case 'submit': {
+        (b.items || []).forEach((it) => { const k = subs.findIndex((x) => x.id === it.id); const row = { ...it, submittedAt: new Date().toISOString() }; if (k >= 0) subs[k] = row; else subs.push(row); });
+        store.set('demoSubs', subs); return { ok: true };
+      }
+      case 'queue': {
+        const me2 = String(b.reviewer || '').trim().toLowerCase();
+        return { ok: true, items: subs.slice().reverse().map((x) => { const all = revs[x.id] || []; const { thumb, ...rest } = x; return { ...rest, reviews: role === 'admin' ? all : all.filter((r) => r.reviewer.trim().toLowerCase() === me2), reviewCount: latestPer(all).length }; }) };
+      }
+      case 'thumbs': { const o = {}; (b.ids || []).forEach((id) => { const x = subs.find((y) => y.id === id); if (x) o[id] = x.thumb; }); return { ok: true, thumbs: o }; }
+      case 'myReviews': { const o = {}; (b.ids || []).forEach((id) => { if (revs[id]) o[id] = revs[id]; }); return { ok: true, reviews: o }; }
+      case 'review': {
+        const list = revs[b.subId] = revs[b.subId] || [];
+        const version = list.filter((r) => r.reviewer.trim().toLowerCase() === String(b.reviewer).trim().toLowerCase()).length + 1;
+        list.push({ at: new Date().toISOString(), reviewer: b.reviewer, verdict: b.verdict, labels: b.labels, labelText: b.labelText, comment: b.comment, marks: b.marks, version });
+        store.set('demoRevs', revs); return { ok: true, version };
+      }
+      default: return { ok: true, id: 'demo' };
+    }
+  }
 
   // ---------- Appearance: 4 light + 4 dark themes ----------
   // Swatch colours mirror the CSS variables in styles.css: [background, card, accent]
@@ -1301,9 +1984,9 @@
     render(); toast(t('historyCleared'));
   };
 
-  window.addEventListener('online', () => { render(); processQueue(); });
+  window.addEventListener('online', () => { render(); processQueue(); flushSubmissions(); loadCats(); });
   window.addEventListener('offline', render);
-  document.addEventListener('visibilitychange', () => { if (!document.hidden) { setAppHeight(); maybeAskNewDay(); if (state.password) gpsStart(); processQueue(); checkForUpdate(false); maybeReload(); } });
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) { setAppHeight(); if (state.role !== 'reviewer') { maybeAskNewDay(); if (state.password) gpsStart(); flushSubmissions(); fetchMyReviews(false); } processQueue(); checkForUpdate(false); maybeReload(); } });
 
   // iPhone home-screen apps: after the keyboard closes, the window can stay shrunk (bottom bar
   // floats up, strip at the bottom). Scrolling back to the top once the last field loses focus
@@ -1360,8 +2043,13 @@
     if (store.get('seenVersion', null) === null && !state.password) store.set('seenVersion', VERSION);
     applyTheme();
     applyI18n();
+    applyRole();
     if (!needsOnboard()) { refreshFolders(false); processQueue(); }
-    if (!state.onboardMode) { maybeShowWhatsNew(); maybeAskNewDay(); gpsStart(); }
+    if (!state.onboardMode) {
+      maybeShowWhatsNew();
+      loadCats();
+      if (state.role !== 'reviewer') { maybeAskNewDay(); gpsStart(); flushSubmissions(); fetchMyReviews(true); }
+    }
     setupServiceWorker();
     hideSplash();
     setAppHeight(); nudgeViewport();
