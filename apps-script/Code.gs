@@ -24,6 +24,7 @@ function doPost(e) {
     const props = PropertiesService.getScriptProperties();
     const rootId = props.getProperty('ROOT_FOLDER_ID');
     if (!props.getProperty('TEAM_PASSWORD') || !rootId) return json({ ok: false, error: 'not_configured' });
+    if (req.action === 'pushAck') return pushAck_(req, rootId);
     const role = roleOf_(req.key, props);
     if (!role) return json({ ok: false, error: 'bad_key' });
     const allowed_ = {
@@ -532,7 +533,7 @@ function json(obj) {
 //   FCM_VAPID_KEY        Cloud Messaging → Web Push certificates → key pair
 // After pasting this code: choose setupNotifications in the toolbar and press Run once (installs the 5-minute timer).
 const NQ_HEADERS = ['时间', '类型', '人', '送审ID', '拍照者', '结论'];
-const PUSH_LOG_HEADERS = ['时间', '名字', '身份', '标题', '内容', '结果', '设备'];
+const PUSH_LOG_HEADERS = ['发出时间', '名字', '身份', '标题', '内容', '结果', '设备', '编号', '收到时间', '点开时间'];
 const PUSH_HEADERS = ['token', '身份', '名字', '送审通知', '我的审核结果', '全部审核结果', '语言', '网址', '更新时间', '设备'];
 const NOTIFY_TEXT = {
   zh: {
@@ -611,7 +612,7 @@ function fcmSend_(props, msgs) {
   const res = UrlFetchApp.fetchAll(msgs.map(function (m) {
     return {
       url: url, method: 'post', contentType: 'application/json', muteHttpExceptions: true, headers: { Authorization: 'Bearer ' + tok },
-      payload: JSON.stringify({ message: { token: m.token, data: { title: m.title, body: m.body, link: m.link || '', tag: m.tag || '' },
+      payload: JSON.stringify({ message: { token: m.token, data: { title: m.title, body: m.body, link: m.link || '', tag: m.tag || '', rid: m.rid || '' },
         webpush: { headers: { Urgency: 'high', TTL: '86400' } } } }),
     };
   }));
@@ -653,16 +654,31 @@ function pushAction_(req, role, root, props) {
   if (req.action === 'pushTest') {
     if (!pushConfig_(props)) return json({ ok: false, error: 'push_not_configured' });
     const T = NOTIFY_TEXT[req.lang] || NOTIFY_TEXT.zh;
-    const r = fcmSend_(props, [{ token: token, title: T.testTitle, body: T.test, link: clip_(req.url, 300), tag: 'durimage-test' }])[0];
+    const rid = Utilities.getUuid();
+    const r = fcmSend_(props, [{ token: token, title: T.testTitle, body: T.test, link: clip_(req.url, 300), tag: 'durimage-test', rid: rid }])[0];
     if (r.gone) dropDevices_(root, req.tz, [token]);
     try {
       const roleName = { team: '拍照', reviewer: '审核员', admin: '管理员' };
       hiddenTab_(root, req.tz, '_推送记录', PUSH_LOG_HEADERS).appendRow([new Date(), safe_(clip_(req.name, 40)), roleName[role] || role, T.testTitle, '（测试）',
-        r.code === 200 ? '已送出' : (r.gone ? '手机已失效，已移除 ' : '失败 ') + r.code + ' ' + r.text, safe_(clip_(req.device, 40))]);
+        r.code === 200 ? '已送出' : (r.gone ? '手机已失效，已移除 ' : '失败 ') + r.code + ' ' + r.text, safe_(clip_(req.device, 40)), rid, '', '']);
     } catch (e) {}
     return json(r.code === 200 ? { ok: true } : { ok: false, error: 'push_failed', message: r.code + ' ' + r.text });
   }
   return json({ ok: false, error: 'bad_action' });
+}
+
+// The phone reports back when a notification arrived ('recv') and when it was tapped ('open').
+function pushAck_(req, rootId) {
+  const rid = String(req.rid || '').replace(/[^\w-]/g, '').slice(0, 40);
+  if (rid.length < 30 || !rootId) return json({ ok: false, error: 'bad_rid' });
+  const root = DriveApp.getFolderById(rootId);
+  const sh = getBook_(root, req.tz).getSheetByName('_推送记录');
+  if (!sh) return json({ ok: false, error: 'bad_rid' });
+  const cell = sh.getRange('H:H').createTextFinder(rid).matchEntireCell(true).findNext();
+  if (!cell) return json({ ok: false, error: 'bad_rid' });
+  const col = req.kind === 'open' ? 10 : 9, target = sh.getRange(cell.getRow(), col);
+  if (!target.getValue()) target.setValue(new Date());
+  return json({ ok: true });
 }
 
 // Runs every 5 minutes (installed by setupNotifications): one merged notification per person.
@@ -708,6 +724,7 @@ function sendNotifications() {
       }
     }
   });
+  msgs.forEach(function (m) { m.rid = Utilities.getUuid(); });
   const res = fcmSend_(props, msgs);
   withLock_(function () {
     dropDevices_(root, tz, res.filter(function (r) { return r.gone; }).map(function (r) { return r.token; }));
@@ -715,9 +732,9 @@ function sendNotifications() {
     const roleName = { team: '拍照', reviewer: '审核员', admin: '管理员' };
     const rows = msgs.map(function (m, i) {
       const r = res[i], ok = r.code === 200;
-      return [new Date(), m.who.name, roleName[m.who.role] || m.who.role, m.title, m.body, ok ? '已送出' : (r.gone ? '手机已失效，已移除 ' : '失败 ') + r.code + (ok ? '' : ' ' + r.text), m.who.device];
+      return [new Date(), m.who.name, roleName[m.who.role] || m.who.role, m.title, m.body, ok ? '已送出' : (r.gone ? '手机已失效，已移除 ' : '失败 ') + r.code + (ok ? '' : ' ' + r.text), m.who.device, m.rid, '', ''];
     });
-    if (!rows.length) rows.push([new Date(), '', '', '没有人需要通知', events.map(function (e) { return (e[1] === 'sub' ? '送审 ' : '审核 ') + e[2] + (e[4] && e[1] === 'rev' ? ' → ' + e[4] : ''); }).join('；').slice(0, 500), '', '']);
+    if (!rows.length) rows.push([new Date(), '', '', '没有人需要通知', events.map(function (e) { return (e[1] === 'sub' ? '送审 ' : '审核 ') + e[2] + (e[4] && e[1] === 'rev' ? ' → ' + e[4] : ''); }).join('；').slice(0, 500), '', '', '', '', '']);
     const log = hiddenTab_(root, tz, '_推送记录', PUSH_LOG_HEADERS);
     log.getRange(log.getLastRow() + 1, 1, rows.length, PUSH_LOG_HEADERS.length).setValues(rows);
     if (log.getLastRow() > 600) log.deleteRows(2, log.getLastRow() - 500); // keep the latest ~500

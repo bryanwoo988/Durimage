@@ -3,6 +3,15 @@
 // date = the real release time in UTC (the moment it is pushed), e.g. from `date -u +%Y-%m-%dT%H:%M:%SZ`.
 window.DURIMAGE_CHANGELOG = [
   {
+    version: '1.6.5',
+    date: '2026-11-05T12:17:38Z',
+    notes: {
+      zh: ['「_推送记录」记下每支手机真正收到通知的时间和点开的时间（手机收到时会自动回报），跟发出时间一比就知道慢在哪里'],
+      en: ['"_推送记录" now records when each phone actually received a notification and when it was tapped (the phone reports back), next to when it was sent'],
+      ms: ['"_推送记录" kini merekod bila setiap telefon benar-benar menerima notifikasi dan bila ia diketik (telefon melaporkan kembali), di sebelah masa ia dihantar'],
+    },
+  },
+  {
     version: '1.6.4',
     date: '2026-11-05T12:08:53Z',
     notes: {
