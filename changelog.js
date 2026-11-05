@@ -3,6 +3,15 @@
 // date = the real release time in UTC (the moment it is pushed), e.g. from `date -u +%Y-%m-%dT%H:%M:%SZ`.
 window.DURIMAGE_CHANGELOG = [
   {
+    version: '1.6.2',
+    date: '2026-11-05T11:22:37Z',
+    notes: {
+      zh: ['审核清单按真正的时间排序，最新送审的在最上面；「我审核过的」「已审核」里，刚审核完的排在最上面'],
+      en: ['The review list is sorted by real time, newest submission on top; in "Reviewed by me" / "Reviewed" the most recently reviewed photo is on top'],
+      ms: ['Senarai semakan diisih mengikut masa sebenar, penghantaran terbaharu di atas; dalam "Disemak oleh saya" / "Disemak" foto yang paling baru disemak berada di atas'],
+    },
+  },
+  {
     version: '1.6.1',
     date: '2026-11-05T11:19:06Z',
     notes: {

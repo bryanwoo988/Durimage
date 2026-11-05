@@ -1668,9 +1668,16 @@
     fillSelect($('revBy'), t('allPeople'), [...new Set(all.map((s) => s.by).filter(Boolean))], revState.by);
     fillSelect($('revOrchard'), t('allOrchards'), [...new Set(all.map((s) => s.orchard).filter(Boolean))], revState.orchard);
     $('revDate').innerHTML = DATES.map((d) => `<option value="${d}" ${revState.date === d ? 'selected' : ''}>${esc(t('d_' + d))}</option>`).join('');
-    let list = all.filter(revPass);
-    if (revState.sort === 'old') list = list.slice().reverse();
-    if (revState.sort === 'unsure') list = list.slice().sort((a, b) => (a.confident === b.confident ? 0 : a.confident ? 1 : -1));
+    // Newest first, by real time (rows in the Sheet are not always in time order, e.g. re-sent photos).
+    // In "reviewed" tabs the time is the latest review, so what was just reviewed is on top.
+    const reviewedTab = revState.tab === 'mine' || revState.tab === 'reviewed';
+    const when = (s) => {
+      if (reviewedTab) { const rs = revIsAdmin() ? s.reviews || [] : mine(s); const t0 = rs.map((r) => String(r.at || '')).sort().pop(); if (t0) return t0; }
+      return String(s.submittedAt || s.capturedAt || '');
+    };
+    let list = all.filter(revPass).sort((a, b) => when(b).localeCompare(when(a)));
+    if (revState.sort === 'old') list = list.reverse();
+    if (revState.sort === 'unsure') list = list.sort((a, b) => (a.confident === b.confident ? 0 : a.confident ? 1 : -1));
     revState.order = list.map((s) => s.id);
     $('revCount').textContent = revState.loading ? t('loading') : t('foundN', { n: list.length });
     $('revEmpty').hidden = list.length > 0 || revState.loading;
