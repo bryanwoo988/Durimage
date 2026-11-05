@@ -532,6 +532,7 @@ function json(obj) {
 //   FCM_VAPID_KEY        Cloud Messaging → Web Push certificates → key pair
 // After pasting this code: choose setupNotifications in the toolbar and press Run once (installs the 5-minute timer).
 const NQ_HEADERS = ['时间', '类型', '人', '送审ID', '拍照者', '结论'];
+const PUSH_LOG_HEADERS = ['时间', '名字', '身份', '标题', '内容', '结果'];
 const PUSH_HEADERS = ['token', '身份', '名字', '送审通知', '我的审核结果', '全部审核结果', '语言', '网址', '更新时间'];
 const NOTIFY_TEXT = {
   zh: {
@@ -616,7 +617,7 @@ function fcmSend_(props, msgs) {
   }));
   return res.map(function (r, i) {
     const code = r.getResponseCode(), text = r.getContentText();
-    return { token: msgs[i].token, code: code, gone: code === 404 || (code === 400 && /registration token|UNREGISTERED|INVALID_ARGUMENT/.test(text)), text: text.slice(0, 200) };
+    return { token: msgs[i].token, code: code, gone: code === 404 || /UNREGISTERED|not a valid FCM registration token/i.test(text), text: text.slice(0, 200) };
   });
 }
 function readDevices_(root, tz) {
@@ -669,7 +670,7 @@ function sendNotifications() {
   let events = [];
   withLock_(function () {
     const q = hiddenTab_(root, tz, '_通知', NQ_HEADERS), n = q.getLastRow();
-    if (n >= 2) { events = q.getRange(2, 1, n - 1, NQ_HEADERS.length).getValues(); q.getRange(2, 1, n - 1, NQ_HEADERS.length).clearContent(); }
+    if (n >= 2) { events = q.getRange(2, 1, n - 1, NQ_HEADERS.length).getValues().filter(function (e) { return e[1]; }); q.getRange(2, 1, n - 1, NQ_HEADERS.length).clearContent(); }
     props.deleteProperty('NOTIFY_PENDING');
   });
   if (!events.length || !pushConfig_(props)) return;
@@ -686,24 +687,36 @@ function sendNotifications() {
     if ((d.role === 'reviewer' || d.role === 'admin') && d.pSub) {
       const g = group(subs.filter(function (e) { return !same(e[2], d.name); }), 2);
       const n = g.reduce(function (s, x) { return s + x.ids.length; }, 0);
-      if (n) msgs.push({ token: d.token, title: T.subTitle, body: T.sub(g.map(function (x) { return x.who; }).join(T.sep), n), link: base + '?open=review', tag: 'durimage-sub' });
+      if (n) msgs.push({ who: d, token: d.token, title: T.subTitle, body: T.sub(g.map(function (x) { return x.who; }).join(T.sep), n), link: base + '?open=review', tag: 'durimage-sub' });
     }
     if (d.role === 'admin' && d.pAll) {
       const g = group(revs.filter(function (e) { return !same(e[2], d.name); }), 2);
       const n = g.reduce(function (s, x) { return s + x.ids.length; }, 0);
-      if (n) msgs.push({ token: d.token, title: T.allTitle(n), body: g.map(function (x) { return T.allItem(x.who, x.ids.length); }).join(T.allSep), link: base + '?open=hub', tag: 'durimage-rev' });
+      if (n) msgs.push({ who: d, token: d.token, title: T.allTitle(n), body: g.map(function (x) { return T.allItem(x.who, x.ids.length); }).join(T.allSep), link: base + '?open=hub', tag: 'durimage-rev' });
     } else if (d.role !== 'reviewer' && d.pMine) {
       const mine = revs.filter(function (e) { return same(e[4], d.name) && !same(e[2], d.name); });
       if (mine.length) {
         const g = group(mine, 2), photos = {};
         mine.forEach(function (e) { if (e[5] !== '同意' || !photos[e[3]]) photos[e[3]] = e[5]; }); // any expert asking for a correction counts
         const ids = Object.keys(photos), ok = ids.filter(function (k) { return photos[k] === '同意'; }).length;
-        msgs.push({ token: d.token, title: T.mineTitle, body: T.mine(g.map(function (x) { return x.who; }).join(T.sep), ids.length, ok, ids.length - ok), link: base + '?open=mine', tag: 'durimage-mine' });
+        msgs.push({ who: d, token: d.token, title: T.mineTitle, body: T.mine(g.map(function (x) { return x.who; }).join(T.sep), ids.length, ok, ids.length - ok), link: base + '?open=mine', tag: 'durimage-mine' });
       }
     }
   });
   const res = fcmSend_(props, msgs);
-  withLock_(function () { dropDevices_(root, tz, res.filter(function (r) { return r.gone; }).map(function (r) { return r.token; })); });
+  withLock_(function () {
+    dropDevices_(root, tz, res.filter(function (r) { return r.gone; }).map(function (r) { return r.token; }));
+    // Hidden "_推送记录" tab: what was sent to whom (or that nobody needed it), for checking problems.
+    const roleName = { team: '拍照', reviewer: '审核员', admin: '管理员' };
+    const rows = msgs.map(function (m, i) {
+      const r = res[i], ok = r.code === 200;
+      return [new Date(), m.who.name, roleName[m.who.role] || m.who.role, m.title, m.body, ok ? '已送出' : (r.gone ? '手机已失效，已移除 ' : '失败 ') + r.code + (ok ? '' : ' ' + r.text)];
+    });
+    if (!rows.length) rows.push([new Date(), '', '', '没有人需要通知', events.map(function (e) { return (e[1] === 'sub' ? '送审 ' : '审核 ') + e[2] + (e[4] && e[1] === 'rev' ? ' → ' + e[4] : ''); }).join('；').slice(0, 500), '']);
+    const log = hiddenTab_(root, tz, '_推送记录', PUSH_LOG_HEADERS);
+    log.getRange(log.getLastRow() + 1, 1, rows.length, PUSH_LOG_HEADERS.length).setValues(rows);
+    if (log.getLastRow() > 600) log.deleteRows(2, log.getLastRow() - 500); // keep the latest ~500
+  });
 }
 
 // Run once from the editor (toolbar: choose setupNotifications → Run). Safe to run again.

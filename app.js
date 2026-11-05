@@ -2157,7 +2157,7 @@
       if (!token) throw new Error('no token');
       const r = await pushRegister(token);
       if (!r.ok) throw new Error(r.error || 'server');
-      store.set('pushToken', token);
+      store.set('pushToken', token); store.set('pushTokAt', Date.now());
       toast(t('pushOnToast'));
       return true;
     } catch (e) {
@@ -2177,14 +2177,16 @@
     const token = store.get('pushToken', null);
     if (!token || pushSyncing || DEMO || !navigator.onLine || !state.password || state.onboardMode) return;
     if (pushSupport() !== 'ok' || Notification.permission !== 'granted') { disablePush(); return; } // permission taken away in iPhone Settings
-    const daily = Date.now() - store.get('pushAt', 0) > 24 * 3600 * 1000;
-    if (!force && !daily) return;
+    // Re-confirm this phone with the server each time the app is opened (at most every 30 min),
+    // so it is never left out after a server-side cleanup; get a fresh Firebase token once a day.
+    const daily = Date.now() - store.get('pushTokAt', 0) > 24 * 3600 * 1000;
+    if (!force && !daily && Date.now() - store.get('pushAt', 0) < 30 * 60 * 1000) return;
     pushSyncing = true;
     try {
       let tok = token;
       if (daily) {
         const cfg = await getPushCfg();
-        if (cfg.enabled) { const fresh = await fcmGetToken(cfg); if (fresh && fresh !== token) { await api({ action: 'pushUnregister', key: state.password, tz: tzName(), token }); tok = fresh; store.set('pushToken', fresh); } }
+        if (cfg.enabled) { const fresh = await fcmGetToken(cfg); store.set('pushTokAt', Date.now()); if (fresh && fresh !== token) { await api({ action: 'pushUnregister', key: state.password, tz: tzName(), token }); tok = fresh; store.set('pushToken', fresh); } }
       }
       await pushRegister(tok);
     } catch (e) { console.error(e); } finally { pushSyncing = false; }
@@ -2204,6 +2206,8 @@
     $('pushBtn').textContent = pushState.busy ? t('loading') : t(on ? 'pushDisable' : 'pushEnable');
     $('pushBtn').className = 'btn btn-block ' + (on ? 'btn-outline' : 'btn-primary');
     $('pushTestBtn').hidden = !on;
+    $('pushWho').hidden = !on;
+    $('pushWho').textContent = t('pushWho', { r: t(r === 'reviewer' ? 'reviewerRole' : r === 'admin' ? 'adminRole' : 'teamRole'), n: myName() || '—' });
     $('notifValue').textContent = t(on ? 'notifValPush' : 'notifValApp');
   }
   $('notifRowBtn').onclick = async () => { closeSheet('settingsSheet'); renderNotif(); openSheet('notifSheet'); await getPushCfg(); renderNotif(); };

@@ -755,3 +755,5 @@ body.role-reviewer .team-only { display: none !important; }
 .ask-bell { width: 64px; height: 64px; margin: 0 auto; border-radius: 50%; background: var(--gold-100); color: var(--gold-ink); display: grid; place-items: center; }
 .ask-bell svg { width: 32px; height: 32px; }
 .news-item .rv-meta b { font-weight: 700; }
+
+.push-who { font-weight: 600; color: var(--ink); }

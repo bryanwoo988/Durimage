@@ -3,6 +3,15 @@
 // date = the real release time in UTC (the moment it is pushed), e.g. from `date -u +%Y-%m-%dT%H:%M:%SZ`.
 window.DURIMAGE_CHANGELOG = [
   {
+    version: '1.6.3',
+    date: '2026-11-05T12:02:35Z',
+    notes: {
+      zh: ['设置 → 通知 显示这支手机登记的身份和名字（通知是按名字对上的）', '每次打开 App 都会向服务器确认这支手机，不会因为被清掉而收不到通知', 'Google Sheet 新增隐藏分页「_推送记录」：每条通知发给谁、有没有送出，方便查问题'],
+      en: ['Settings → Notifications shows the role and name this phone is registered with (notifications are matched by name)', 'The phone is re-confirmed with the server each time the app opens, so it is not left out after a cleanup', 'New hidden tab "_推送记录" in the Google Sheet: who each notification went to and whether it was delivered'],
+      ms: ['Tetapan → Notifikasi menunjukkan peranan dan nama yang didaftarkan untuk telefon ini (notifikasi dipadankan mengikut nama)', 'Telefon disahkan semula dengan pelayan setiap kali aplikasi dibuka, jadi tidak tertinggal selepas pembersihan', 'Tab tersembunyi baharu "_推送记录" dalam Google Sheet: kepada siapa setiap notifikasi dihantar dan sama ada berjaya'],
+    },
+  },
+  {
     version: '1.6.2',
     date: '2026-11-05T11:22:37Z',
     notes: {
