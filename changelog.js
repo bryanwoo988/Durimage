@@ -3,6 +3,15 @@
 // date = the real release time in UTC (the moment it is pushed), e.g. from `date -u +%Y-%m-%dT%H:%M:%SZ`.
 window.DURIMAGE_CHANGELOG = [
   {
+    version: '1.4.3',
+    date: '2026-11-05T01:16:04Z',
+    notes: {
+      zh: ['拍照时刚好遇到 App 自动更新，刚拍的照片不会再丢失', '登录完成后就先询问定位权限，第一次按快门时不会跟相机抢画面'],
+      en: ['A photo being taken while an automatic update arrives is no longer lost', 'Location permission is asked right after login, so it does not clash with the camera on the first shot'],
+      ms: ['Foto yang sedang diambil semasa kemas kini automatik tiba tidak lagi hilang', 'Kebenaran lokasi diminta sejurus selepas log masuk, jadi tidak bertembung dengan kamera pada foto pertama'],
+    },
+  },
+  {
     version: '1.4.2',
     date: '2026-11-05T01:09:10Z',
     notes: {

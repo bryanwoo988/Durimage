@@ -168,7 +168,12 @@
     // No auto-focus on first launch: the keyboard would cover the intro. Focus only when re-entering.
     if (mode !== 'pw') setTimeout(() => (pwStep ? $('pwInput') : $('nameInput')).focus(), 50);
   }
-  function hideOnboard() { $('onboard').hidden = true; state.onboardMode = null; document.body.classList.remove('ob-mode'); document.documentElement.classList.remove('ob-mode'); maybeShowWhatsNew(); }
+  function hideOnboard() {
+    $('onboard').hidden = true; state.onboardMode = null;
+    document.body.classList.remove('ob-mode'); document.documentElement.classList.remove('ob-mode');
+    maybeShowWhatsNew();
+    if (state.password && state.name) gpsStart(); // location permission is asked now, not when the camera opens
+  }
   function setPwVisible(on) {
     $('pwInput').type = on ? 'text' : 'password';
     $('pwEye').querySelector('use').setAttribute('href', on ? '#i-eye-off' : '#i-eye');
@@ -543,7 +548,7 @@
   // Shutter: an orchard must be set first (gallery uploads may leave it empty)
   $('cameraInput').closest('label').addEventListener('click', (e) => {
     if (e.target.id === 'cameraInput') return;
-    gpsStart(); // warm up the GPS while the camera is open
+    if (store.get('geoAsked', false)) gpsStart(); // warm up the GPS while the camera is open (permission already asked)
     if (state.track && !state.orchard) { e.preventDefault(); pendingCamera = true; toast(t('needOrchard')); openOrchardSheet(); return; }
     const tr = state.track && state.orchard ? treeOf(state.orchard) : null;
     if (tr && tr.mode === 'tag' && !tr.tag) { e.preventDefault(); pendingCamera = true; openTreeSheet('tag', ''); $('treeHint').textContent = t('needTagFirst'); }
@@ -631,6 +636,7 @@
     const files = [...e.target.files].filter((f) => f.type.startsWith('image/') || /\.(heic|heif)$/i.test(f.name));
     e.target.value = '';
     if (!files.length) return;
+    pickerOpenUntil = 0;
     if (needsOnboard()) return;
     state.pending = files;
     state.reviewFolder = state.currentFolder;
@@ -655,6 +661,9 @@
   }
   $('cameraInput').addEventListener('change', onFiles);
   $('galleryInput').addEventListener('change', onFiles);
+  // While the camera or gallery is open (and for a while after), an update must not reload the page.
+  ['cameraInput', 'galleryInput'].forEach((id) => $(id).closest('label').addEventListener('click', () => { pickerOpenUntil = Date.now() + 10 * 60 * 1000; }));
+  document.addEventListener('visibilitychange', () => { if (!document.hidden && pickerOpenUntil > Date.now()) pickerOpenUntil = Date.now() + 8000; });
 
   function resetReview(files) {
     // files given → only reset if the review still shows that same batch (a new photo may have
@@ -671,6 +680,7 @@
   const geo = { best: null, watch: null, stopTimer: null, error: null };
   function gpsStart() {
     if (!state.gps || !navigator.geolocation) return;
+    store.set('geoAsked', true);
     clearTimeout(geo.stopTimer);
     geo.stopTimer = setTimeout(gpsStop, 3 * 60 * 1000); // save battery: stop 3 min after last use
     if (geo.watch != null) return;
@@ -1142,8 +1152,11 @@
   // A new service worker takes over → reload into the new version, but never in the middle of
   // an upload or while the user is saving a photo.
   let swReg = null, pendingReload = false;
+  let pickerOpenUntil = 0; // set when the camera/gallery opens; the photo arrives a moment after we return
   function maybeReload() {
-    if (pendingReload && !state.uploading && $('reviewSheet').hidden) location.reload();
+    if (!pendingReload || state.uploading || !$('reviewSheet').hidden) return;
+    if (Date.now() < pickerOpenUntil) { setTimeout(maybeReload, 2000); return; }
+    location.reload();
   }
   async function checkForUpdate(manual) {
     if (!swReg) { if (manual) toast(t('checkFailed'), true); return; }
