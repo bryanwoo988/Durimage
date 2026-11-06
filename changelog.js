@@ -3,6 +3,15 @@
 // date = the real release time in UTC (the moment it is pushed), e.g. from `date -u +%Y-%m-%dT%H:%M:%SZ`.
 window.DURIMAGE_CHANGELOG = [
   {
+    version: '1.7.4',
+    date: '2026-11-06T05:04:22Z',
+    notes: {
+      zh: ['审核员的画面更清楚：一打开就看到标题和分页，载入中会显示占位卡片，不会空空的', '最上面有欢迎卡，显示待审核和已审核的数量；管理员的审核中心显示待审核、已审核、有分歧', '第一次登录的审核员会看到「怎么审核」的简单说明', '全部审完时显示「全部审完了！」，还没开通知的话可以直接开启'],
+      en: ['Clearer reviewer screen: title and tabs show at once, and placeholder cards appear while loading instead of an empty page', 'A greeting card at the top shows how many photos are waiting and how many you reviewed (the admin\'s Review hub shows waiting / reviewed / disagreements)', 'First-time reviewers see a short "How to review" guide', 'When everything is reviewed: "All done!", with a button to turn on notifications if they are off'],
+      ms: ['Skrin penyemak lebih jelas: tajuk dan tab terus muncul, dan kad pemegang tempat dipaparkan semasa memuat, bukan halaman kosong', 'Kad sapaan di atas menunjukkan bilangan foto yang menunggu dan yang telah anda semak (Pusat semakan pentadbir: menunggu / disemak / perbezaan pendapat)', 'Penyemak kali pertama melihat panduan ringkas "Cara menyemak"', 'Apabila semua selesai: "Semua selesai!", dengan butang untuk menghidupkan notifikasi jika masih mati'],
+    },
+  },
+  {
     version: '1.7.3',
     date: '2026-11-05T23:55:10Z',
     notes: {

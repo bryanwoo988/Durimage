@@ -1667,6 +1667,7 @@
     if (!navigator.onLine) { $('revOffline').hidden = false; renderQueue(); return; }
     $('revOffline').hidden = true;
     revState.loading = true; $('revCount').textContent = t('loading');
+    renderQueue(); // title, tabs, filters and placeholder cards straight away
     try {
       const r = await api({ action: 'queue', key: state.password, tz: tzName(), reviewer: state.role === 'reviewer' ? state.revName : '' });
       if (r.ok) { revState.items = r.items || []; revState.removed = r.removed || []; revState.loaded = true; mergeOutbox(); }
@@ -1676,6 +1677,34 @@
     revState.loading = false;
     renderQueue();
   }
+  // Greeting card with the numbers that matter for this person.
+  function renderRevHero() {
+    const all = revState.items, admin = revIsAdmin();
+    const n = (v) => (revState.loaded ? String(v) : '–');
+    const stats = admin
+      ? [['revStatTodo', all.filter((s) => !s.reviewCount).length], ['revStatReviewed', all.filter((s) => s.reviewCount > 0).length], ['revStatDisagree', all.filter(disagree).length]]
+      : [['revStatTodo', all.filter((s) => !mine(s).length).length], ['revStatMine', all.filter((s) => mine(s).length).length]];
+    $('revHero').innerHTML = `<div class="rh-hello">${esc(t('revHello', { n: myName() || '' }))}</div>
+      <div class="rh-stats">${stats.map(([k, v]) => `<div><b>${esc(n(v))}</b><span>${esc(t(k))}</span></div>`).join('')}</div>`;
+    $('revHelp').hidden = admin || store.get('revHelpSeen', false);
+  }
+  $('revHelpOk').onclick = () => { store.set('revHelpSeen', true); $('revHelp').hidden = true; };
+  function renderRevEmpty(count) {
+    const tab = revState.tab, filtered = revState.cat || revState.by || revState.orchard || revState.date !== 'all';
+    let title = 'revEmpty', sub = '';
+    if (!revState.loaded) title = navigator.onLine ? 'revNotLoaded' : 'revNeedNet';
+    else if (!filtered && tab === 'todo') { title = 'revDoneAll'; sub = 'revDoneAllSub'; }
+    else if (!filtered && (tab === 'mine' || tab === 'reviewed')) title = 'revNoneYet';
+    $('revEmptyText').textContent = t(title);
+    $('revEmptySub').hidden = !sub; $('revEmptySub').textContent = sub ? t(sub) : '';
+    // nudge to turn on notifications when there is nothing to do and push could work
+    const sup = pushSupport();
+    const canPush = sub && !store.get('pushToken', null) && pushState.cfg && pushState.cfg.enabled && (sup === 'home' || (sup === 'ok' && Notification.permission !== 'denied'));
+    $('revEmptyBtn').hidden = !canPush || count > 0;
+    if (sub && !pushState.cfg && !DEMO && navigator.onLine) getPushCfg().then(() => { if (pushState.cfg) renderRevEmpty(count); });
+  }
+  // Push possible here → turn it on; iPhone in Safari → open the notification settings, which explain the Home Screen step.
+  $('revEmptyBtn').onclick = () => { if (pushSupport() === 'ok') enablePush().then(() => renderQueue()); else { renderNotif(); openSheet('notifSheet'); } };
   function revTabs() { return revIsAdmin() ? ['todo', 'reviewed', 'disagree', 'all', 'removed'] : ['todo', 'mine', 'all']; }
   function revPass(s) {
     const tab = revState.tab, n = latestPer(s.reviews).length;
@@ -1732,9 +1761,14 @@
     if (revState.sort === 'old') list = list.reverse();
     if (revState.sort === 'unsure') list = list.sort((a, b) => (a.confident === b.confident ? 0 : a.confident ? 1 : -1));
     revState.order = list.map((s) => s.id);
+    renderRevHero();
     $('revCount').textContent = revState.loading ? t('loading') : t('foundN', { n: list.length });
     $('revEmpty').hidden = list.length > 0 || revState.loading;
-    $('revEmptyText').textContent = t(revState.loaded ? 'revEmpty' : 'revNotLoaded');
+    renderRevEmpty(list.length);
+    if (revState.loading && !revState.loaded) { // first load: placeholder cards instead of a blank page
+      $('revList').innerHTML = Array.from({ length: 4 }, () => '<div class="rv-item rv-skel"><div class="rv-thumb"></div><div><i></i><i></i><i></i></div></div>').join('');
+      renderRevNews(); return;
+    }
     $('revList').innerHTML = list.slice(0, 300).map((s) => {
       const me = latestPer(mine(s))[0], n = latestPer(s.reviews).length;
       const stateTags = revIsAdmin()

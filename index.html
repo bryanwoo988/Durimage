@@ -208,6 +208,12 @@
         <button class="pill-btn" id="revSelectBtn" hidden><svg><use href="#i-select"/></svg><span data-i18n="select"></span></button>
         <button class="pill-btn" id="revRefresh"><svg><use href="#i-retry"/></svg><span data-i18n="refresh"></span></button>
       </div>
+      <div class="rev-hero" id="revHero"></div>
+      <div class="rev-help" id="revHelp" hidden>
+        <div class="rh-title" data-i18n="revHelpTitle"></div>
+        <ol><li data-i18n="revHelp1"></li><li data-i18n="revHelp2"></li><li data-i18n="revHelp3"></li><li data-i18n="revHelp4"></li></ol>
+        <button class="btn btn-small btn-outline" id="revHelpOk" data-i18n="gotIt"></button>
+      </div>
       <div class="news-card" id="revNews" hidden>
         <button class="news-main" id="revNewsOpen" type="button"><span class="news-bell"><svg><use href="#i-bell"/></svg></span><span class="news-text" id="revNewsText"></span></button>
         <button class="news-x" id="revNewsDismiss" type="button" aria-label="Close"><svg><use href="#i-x"/></svg></button>
@@ -222,7 +228,9 @@
       </div>
       <div class="rev-count" id="revCount"></div>
       <div class="rev-list" id="revList"></div>
-      <div class="empty" id="revEmpty" hidden><div class="empty-art"><img src="icons/mark.svg" alt=""></div><div class="empty-title" id="revEmptyText"></div></div>
+      <div class="empty" id="revEmpty" hidden><div class="empty-art"><img src="icons/mark.svg" alt=""></div><div class="empty-title" id="revEmptyText"></div>
+        <p class="empty-sub" id="revEmptySub" hidden></p>
+        <button class="btn btn-primary" id="revEmptyBtn" hidden><svg><use href="#i-bell"/></svg><span data-i18n="revNotifyCta"></span></button></div>
     </main>
 
     <div class="select-bar" id="revSelBar" hidden>

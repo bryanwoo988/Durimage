@@ -780,3 +780,27 @@ body.role-reviewer .team-only { display: none !important; }
 #rmReasons { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
 #rmReasons .chip { width: auto; flex: none; padding: 8px 16px; min-height: 0; }
 .rev-filters[hidden] { display: none; }
+
+/* Review list: greeting card, help, placeholders, empty state */
+.rev-hero { border-radius: 18px; padding: 12px 14px; color: #fff; background: linear-gradient(150deg, var(--night-1), var(--night-2)); box-shadow: var(--shadow);
+  display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.rev-hero .rh-hello { font-size: 16px; font-weight: 800; }
+.rev-hero .rh-stats { display: flex; gap: 8px; }
+.rev-hero .rh-stats div { background: rgba(255,255,255,.13); border-radius: 12px; padding: 6px 10px; text-align: center; min-width: 64px; }
+.rev-hero .rh-stats b { display: block; font-size: 19px; line-height: 1.15; color: #ffd35a; font-variant-numeric: tabular-nums; }
+.rev-hero .rh-stats span { font-size: 11.5px; opacity: .9; white-space: nowrap; }
+.rev-help { border-radius: 16px; padding: 10px 14px 12px; background: var(--surface); border: 1px solid var(--line); box-shadow: var(--shadow); position: relative; }
+.rev-help[hidden] { display: none; }
+.rev-help .rh-title { font-weight: 800; font-size: 14.5px; margin-bottom: 2px; padding-right: 76px; }
+.rev-help ol { margin: 0; padding-left: 18px; color: var(--ink-2); font-size: 13px; line-height: 1.55; }
+.rev-help #revHelpOk { position: absolute; top: 8px; right: 10px; }
+.rv-skel { pointer-events: none; }
+.rv-skel .rv-thumb, .rv-skel i { background: linear-gradient(90deg, var(--surface-2) 25%, var(--line) 50%, var(--surface-2) 75%); background-size: 200% 100%; animation: skel 1.2s linear infinite; }
+.rv-skel i { display: block; height: 12px; border-radius: 6px; margin: 8px 0; }
+.rv-skel i:nth-child(1) { width: 70%; height: 16px; } .rv-skel i:nth-child(2) { width: 50%; } .rv-skel i:nth-child(3) { width: 35%; height: 22px; border-radius: 11px; }
+@keyframes skel { to { background-position: -200% 0; } }
+@media (prefers-reduced-motion: reduce) { .rv-skel .rv-thumb, .rv-skel i { animation: none; } }
+.empty-sub { margin: 4px 0 14px; }
+.empty-sub[hidden], #revEmptyBtn[hidden] { display: none; }
+#revEmptyBtn { display: inline-flex; align-items: center; gap: 8px; }
+#revEmptyBtn svg { width: 18px; height: 18px; }
