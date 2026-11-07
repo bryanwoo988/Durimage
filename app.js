@@ -2691,6 +2691,30 @@
   }
   window.addEventListener('resize', setAppHeight);
   window.addEventListener('orientationchange', () => setTimeout(setAppHeight, 300));
+  // iOS can also shrink the window AFTER the app comes back from the background (e.g. the next morning),
+  // without any resize event: the bottom bar then floats up. Re-measure a few times after returning,
+  // after a sheet closes and while scrolling; when the window is short, make iOS recompute it with a
+  // 1-pixel scroll and back (the scroll position stays where it was).
+  function healViewport() {
+    if (navigator.standalone !== true) return;
+    setAppHeight();
+    if (!document.documentElement.classList.contains('vp-gap')) return;
+    const y = window.scrollY, vv = window.visualViewport;
+    if (vv && vv.height < window.innerHeight - 80) return; // keyboard open
+    window.scrollTo(0, y + 1); window.scrollTo(0, y);
+    setTimeout(setAppHeight, 60);
+  }
+  let healAt = 0;
+  const healSoon = () => { const now = Date.now(); if (now - healAt < 800) return; healAt = now; [150, 600, 1500, 3000].forEach((ms) => setTimeout(healViewport, ms)); };
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) healSoon(); });
+  window.addEventListener('pageshow', healSoon);
+  window.addEventListener('focus', healSoon);
+  if (window.visualViewport) window.visualViewport.addEventListener('resize', () => setTimeout(healViewport, 100));
+  let healScroll = 0;
+  window.addEventListener('scroll', () => { const now = Date.now(); if (now - healScroll > 1500) { healScroll = now; setTimeout(healViewport, 200); } }, { passive: true });
+  // a sheet closing (day question, What's new …) is another moment iOS gets it wrong
+  const sheetWatch = new MutationObserver((list) => { if (list.some((m) => m.target.hidden)) healSoon(); });
+  document.querySelectorAll('.sheet-backdrop, #viewer, #markEd').forEach((el) => sheetWatch.observe(el, { attributes: true, attributeFilter: ['hidden'] }));
 
   // Splash: stays at least ~0.8 s after launch so it doesn't flash, then fades out.
   function hideSplash() {

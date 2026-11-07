@@ -3,6 +3,15 @@
 // date = the real release time in UTC (the moment it is pushed), e.g. from `date -u +%Y-%m-%dT%H:%M:%SZ`.
 window.DURIMAGE_CHANGELOG = [
   {
+    version: '1.7.5',
+    date: '2026-11-07T00:12:42Z',
+    notes: {
+      zh: ['iPhone 主画面 App 隔天从背景切回来时，底部导航栏有时会往上跑：现在切回 App、关掉弹出画面、滚动时都会重新检查，发现就自动修正'],
+      en: ['On iPhone home-screen apps the bottom bar could float up when the app came back from the background (e.g. the next day): the app now re-checks when it returns, when a panel closes and while scrolling, and corrects it'],
+      ms: ['Pada aplikasi skrin utama iPhone, bar bawah kadangkala terapung ke atas apabila aplikasi kembali dari latar belakang (cth. keesokan hari): aplikasi kini menyemak semula apabila kembali, apabila panel ditutup dan semasa menatal, lalu membetulkannya'],
+    },
+  },
+  {
     version: '1.7.4',
     date: '2026-11-06T05:04:22Z',
     notes: {
